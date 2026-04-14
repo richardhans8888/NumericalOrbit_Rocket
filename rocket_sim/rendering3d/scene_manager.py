@@ -22,11 +22,10 @@ class SceneManager:
         engine.render.setLight(alnp)
         
         self.ui_time = OnscreenText(text="", pos=(-1.25, 0.9), scale=0.07, fg=(1,1,1,1), align=TextNode.ALeft)
-        
         self.ui_event_box = OnscreenText(text="SYSTEM READY", pos=(0, 0.85), scale=0.08, fg=(1, 1, 0, 1), bg=(0.1,0.1,0.1,0.8), align=TextNode.ACenter)
         
-        self.ui_instruction = OnscreenText(text="[SPACE] Launch | [C] Orbit Cam | [Arrows] Warp | [ESC] Exit", pos=(0, -0.9), scale=0.05, fg=(1,1,1,1))
-        self.btn_restart = DirectButton(text=("RESTART"), scale=0.08, pos=(-1.1, 0, -0.9), command=engine.restart_mission, relief=1)
+        self.ui_instruction = OnscreenText(text="[SPACE] Launch | [C] Cam | [Arrows] Warp", pos=(0, 0.95), scale=0.05, fg=(1,1,1,1))
+        self.btn_restart = DirectButton(text=("RESTART"), scale=0.06, pos=(1.2, 0, 0.9), command=engine.restart_mission, relief=1)
         
         self.dashboard = TelemetryDashboard(engine)
         
@@ -40,12 +39,12 @@ class SceneManager:
         if phase == 0: event_str = "T-MINUS (PRELAUNCH)"
         elif phase == 2: event_str = "MAX-Q (MAX DYNAMIC PRESSURE)"
         elif phase == 3: event_str = "GRAVITY TURN"
-        elif phase == 4: event_str = "MECO / STAGE SEP"
-        elif phase == 5: event_str = "FAIRING SEPARATION"
-        elif phase == 6: event_str = "SES (SECOND STAGE ALIVE)"
+        elif phase == 4: event_str = "SRB SEPARATION"
+        elif phase == 5: event_str = "CORE BURN / FAIRING SEP"
+        elif phase == 6: event_str = "CORE SEPARATION / SES"
         elif phase == 7: event_str = "SECO (ORBITAL INSERTION)"
         
-        self.ui_event_box.setText(f" EVENT: {event_str} ")
+        self.ui_event_box.setText(f" PHASE: {event_str} ")
         
         self.dashboard.update(dt, rocket)
         

@@ -25,8 +25,9 @@ class CameraController:
                 self.mode = 2
                 
         elif self.mode == 2:
-            zoom = max(500, alt * 2.0)
-            self.engine.camera.setPos(target_pos.x, target_pos.y - zoom, target_pos.z)
+            # Crucial Fix: Cap the zoom distance and angle downward, otherwise the rocket becomes sub-pixel out of view!
+            zoom = min(2000, max(500, alt * 0.05))
+            self.engine.camera.setPos(target_pos.x + zoom*0.5, target_pos.y - zoom, target_pos.z + zoom*0.5)
             self.engine.camera.lookAt(self.target)
             
     def cycle_mode(self):

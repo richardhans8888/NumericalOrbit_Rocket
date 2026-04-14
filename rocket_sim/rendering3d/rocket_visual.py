@@ -1,6 +1,5 @@
 # rendering3d/rocket_visual.py
 from panda3d.core import Vec3, NodePath
-from rendering3d.particle_system import SimpleParticleSystem
 from rendering3d.geometry import create_cylinder, create_cone
 import math
 from physics.constants import EARTH_RADIUS
@@ -9,34 +8,54 @@ class RocketVisual:
     def __init__(self, engine, physics_rocket):
         self.engine = engine
         self.physics_rocket = physics_rocket
-        
         self.head_node = engine.render.attachNewNode("RocketHead")
-        self.stages = []
         
-        stage_z = 0.0
-        for i, s in enumerate(physics_rocket.stages[::-1]): 
-            stage_node = NodePath(f"Stage_{i}")
-            stage_node.reparentTo(self.head_node)
-            
-            radius = 2.0
-            height = 15.0
-            
-            cyl = create_cylinder("cyl", radius, height)
-            cyl.reparentTo(stage_node)
-            cyl.setColor(0.7, 0.7, 0.7, 1.0)
-                
-            stage_node.setPos(0, 0, stage_z)
-            stage_z += height
-            self.stages.insert(0, stage_node) 
-            
-        fairing = create_cone("fairing", radius, 6.0)
-        fairing.reparentTo(self.stages[0]) 
-        fairing.setPos(0, 0, height)
-        fairing.setColor(0.8, 0.8, 0.8, 1.0)
-            
-        self.smoke_system = SimpleParticleSystem(engine, color=(0.8, 0.8, 0.8, 0.5), growth_rate=4.0)
-        self.flame_system = SimpleParticleSystem(engine, color=(0.9, 0.9, 0.9, 0.9), growth_rate=1.0)
+        # SRB Left
+        self.srb_left = NodePath("SRB_L")
+        self.srb_left.reparentTo(self.head_node)
+        srb_l_geom = create_cylinder("s1", 1.8, 30.0)
+        srb_l_geom.reparentTo(self.srb_left)
+        srb_l_geom.setColor(0.9, 0.9, 0.9, 1.0)
+        srb_l_cone = create_cone("s1c", 1.8, 3.0)
+        srb_l_cone.reparentTo(self.srb_left)
+        srb_l_cone.setPos(0, 0, 30.0)
+        srb_l_cone.setColor(0.9, 0.9, 0.9, 1.0)
+        self.srb_left.setPos(-4.5, 0, 0)
+        
+        # SRB Right
+        self.srb_right = NodePath("SRB_R")
+        self.srb_right.reparentTo(self.head_node)
+        srb_r_geom = create_cylinder("s2", 1.8, 30.0)
+        srb_r_geom.reparentTo(self.srb_right)
+        srb_r_geom.setColor(0.9, 0.9, 0.9, 1.0)
+        srb_r_cone = create_cone("s2c", 1.8, 3.0)
+        srb_r_cone.reparentTo(self.srb_right)
+        srb_r_cone.setPos(0, 0, 30.0)
+        srb_r_cone.setColor(0.9, 0.9, 0.9, 1.0)
+        self.srb_right.setPos(4.5, 0, 0)
+        
+        # ORANGE CORE
+        self.core = NodePath("CORE")
+        self.core.reparentTo(self.head_node)
+        core_geom = create_cylinder("c1", 4.0, 40.0)
+        core_geom.reparentTo(self.core)
+        core_geom.setColor(0.85, 0.45, 0.1, 1.0) # Vivid Orange
+        
+        # WHITE UPPER STAGE & PAYLOAD CAPSULE
+        self.capsule = NodePath("CAPSULE")
+        self.capsule.reparentTo(self.head_node)
+        cap_geom = create_cylinder("c2", 4.0, 10.0)
+        cap_geom.reparentTo(self.capsule)
+        cap_geom.setColor(0.95, 0.95, 0.95, 1.0)
+        fairing = create_cone("f1", 4.0, 6.0)
+        fairing.reparentTo(self.capsule)
+        fairing.setPos(0, 0, 10.0)
+        fairing.setColor(0.95, 0.95, 0.95, 1.0)
+        self.capsule.setPos(0, 0, 40.0)
+        
         self.debris_visuals = []
+        self.srb_detached = False
+        self.core_detached = False
 
     def sync(self, rocket, phase, world_debris, dt):
         z_visual = rocket.y - EARTH_RADIUS
@@ -45,30 +64,25 @@ class RocketVisual:
         deg = math.degrees(rocket.pitch_angle) - 90.0
         self.head_node.setHpr(0, 0, deg)
         
-        for i, s in enumerate(rocket.stages):
-            vis = self.stages[i]
-            if s.detached and vis.getParent() == self.head_node:
-                vis.wrtReparentTo(self.engine.render) 
-                self.debris_visuals.append({"stage": s, "node": vis})
-                
-        for d in world_debris:
-            for dv in self.debris_visuals:
-                if dv["stage"] == d["stage"]:
-                    dv["node"].setPos(d["x"], 0, d["y"] - EARTH_RADIUS)
-                    dv["node"].setHpr(dv["node"].getHpr() + Vec3(10*dt, 20*dt, 30*dt))
+        # Separation Event 1: Drop side SRBs
+        if rocket.current_stage_index > 0 and not self.srb_detached:
+            self.srb_detached = True
+            self.srb_left.wrtReparentTo(self.engine.render)
+            self.srb_right.wrtReparentTo(self.engine.render)
+            # Add dramatic lateral push velocity!
+            self.debris_visuals.append({"node": self.srb_left, "vx": -40.0, "vy": -20.0, "x": rocket.x, "y": rocket.y})
+            self.debris_visuals.append({"node": self.srb_right, "vx": 40.0, "vy": -20.0, "x": rocket.x, "y": rocket.y})
             
-        is_active = rocket.current_stage_index < len(rocket.stages) and rocket.stages[rocket.current_stage_index].active
-        if is_active:
-            import random
-            base_pos = self.head_node.getPos(self.engine.render)
+        # Separation Event 2: Drop Core
+        if rocket.current_stage_index > 1 and not self.core_detached:
+            self.core_detached = True
+            self.core.wrtReparentTo(self.engine.render)
+            self.debris_visuals.append({"node": self.core, "vx": 0.0, "vy": -30.0, "x": rocket.x, "y": rocket.y})
             
-            if rocket.y < EARTH_RADIUS + 50000:
-                vel = Vec3(random.uniform(-5,5), random.uniform(-5,5), random.uniform(-10, -5))
-                self.smoke_system.emit(base_pos, vel, size=3.0, life=3.0)
-                
-            flame_dir = self.engine.render.getRelativeVector(self.head_node, Vec3(0, 0, -50))
-            scale = 2.0 + max(0, (rocket.y - EARTH_RADIUS)/10000)
-            self.flame_system.emit(base_pos, flame_dir, size=scale, life=0.2)
-            
-        self.smoke_system.update(dt)
-        self.flame_system.update(dt)
+        # Move visual custom debris using simple falling physics
+        for dv in self.debris_visuals:
+            dv["x"] += dv["vx"] * dt
+            dv["y"] += dv["vy"] * dt
+            dv["vy"] -= 9.81 * dt 
+            dv["node"].setPos(dv["x"], 0, dv["y"] - EARTH_RADIUS)
+            dv["node"].setHpr(dv["node"].getHpr() + Vec3(30*dt, -15*dt, 5*dt))
