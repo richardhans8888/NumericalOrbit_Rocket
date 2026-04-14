@@ -1,15 +1,21 @@
 # physics/gravity.py
+import math
 from physics.constants import G, EARTH_MASS
 
-def compute_gravity_acceleration(distance_from_earth_center):
+def compute_gravity_vector(x, y):
     """
-    Computes gravitational acceleration magnitude.
-    Returns a negative value since gravity pulls downwards.
+    Computes true 2D gravity acceleration vector pulling towards (0,0) (center of Earth).
+    Returns (ax, ay)
     """
-    if distance_from_earth_center <= 0:
-        return 0.0
+    dist_sq = x*x + y*y
+    if dist_sq == 0:
+        return 0.0, 0.0
+        
+    distance = math.sqrt(dist_sq)
+    accel_mag = (G * EARTH_MASS) / dist_sq
     
-    # a = GM / r^2
-    # The pull is towards the earth center
-    acceleration_magnitude = (G * EARTH_MASS) / (distance_from_earth_center ** 2)
-    return -acceleration_magnitude  # Negative assuming y-axis points up
+    # Unit vector pointing from (x,y) to origin (0,0)
+    ux = -x / distance
+    uy = -y / distance
+    
+    return accel_mag * ux, accel_mag * uy
