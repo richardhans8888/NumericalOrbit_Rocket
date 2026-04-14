@@ -21,24 +21,9 @@ class RocketVisual:
             radius = 2.0
             height = 15.0
             
-            if i == 0:
-                cyl1 = create_cylinder("b1", radius, height*0.3)
-                cyl1.reparentTo(stage_node)
-                cyl1.setColor(0.1, 0.1, 0.1, 1.0)
-                
-                cyl2 = create_cylinder("b2", radius, height*0.4)
-                cyl2.reparentTo(stage_node)
-                cyl2.setPos(0, 0, height*0.3)
-                cyl2.setColor(0.6, 0.6, 0.6, 1.0)
-                
-                cyl3 = create_cylinder("b3", radius, height*0.3)
-                cyl3.reparentTo(stage_node)
-                cyl3.setPos(0, 0, height*0.7)
-                cyl3.setColor(0.15, 0.15, 0.15, 1.0)
-            else:
-                cyl = create_cylinder("upper", radius, height)
-                cyl.reparentTo(stage_node)
-                cyl.setColor(0.9, 0.9, 0.95, 1.0)
+            cyl = create_cylinder("cyl", radius, height)
+            cyl.reparentTo(stage_node)
+            cyl.setColor(0.7, 0.7, 0.7, 1.0)
                 
             stage_node.setPos(0, 0, stage_z)
             stage_z += height
@@ -47,10 +32,10 @@ class RocketVisual:
         fairing = create_cone("fairing", radius, 6.0)
         fairing.reparentTo(self.stages[0]) 
         fairing.setPos(0, 0, height)
-        fairing.setColor(1.0, 1.0, 1.0, 1.0)
+        fairing.setColor(0.8, 0.8, 0.8, 1.0)
             
         self.smoke_system = SimpleParticleSystem(engine, color=(0.8, 0.8, 0.8, 0.5), growth_rate=4.0)
-        self.flame_system = SimpleParticleSystem(engine, color=(1.0, 0.8, 0.2, 0.9), growth_rate=1.0)
+        self.flame_system = SimpleParticleSystem(engine, color=(0.9, 0.9, 0.9, 0.9), growth_rate=1.0)
         self.debris_visuals = []
 
     def sync(self, rocket, phase, world_debris, dt):

@@ -73,6 +73,6 @@ class AppEngine(ShowBase):
         
         alt = self.world.rocket.get_altitude()
         self.scene.update_atmosphere(alt)
-        self.scene.update_ui(self.world.time_elapsed, alt, self.world.rocket.get_velocity_mag(), self.world.phase, self.world.time_warp)
+        self.scene.update_ui(self.world.time_elapsed, alt, self.world.rocket.get_velocity_mag(), self.world.phase, self.world.time_warp, self.world.rocket, dt)
 
         return Task.cont
