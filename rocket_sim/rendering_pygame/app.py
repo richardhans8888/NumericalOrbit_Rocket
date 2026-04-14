@@ -12,9 +12,9 @@ from simulation.world import World
 from physics.constants import EARTH_RADIUS
 
 # ─── CONSTANTS ────────────────────────────────────────────
-WIDTH, HEIGHT = 1280, 800
-DASH_H = 200  # bottom dashboard height
-VIEW_H = HEIGHT - DASH_H  # 3D viewport height
+WIDTH, HEIGHT = 1440, 900
+DASH_H = 280  # taller dashboard
+VIEW_H = HEIGHT - DASH_H
 FPS = 60
 
 # Colors
@@ -44,6 +44,12 @@ C_CYAN       = (0, 200, 255)
 C_YELLOW     = (255, 255, 60)
 C_MAGENTA    = (210, 60, 210)
 C_RED        = (255, 50, 50)
+C_OCEAN      = (20, 55, 100)
+C_LAND1      = (60, 130, 45)
+C_LAND2      = (90, 150, 60)
+C_LAND3      = (45, 100, 35)
+C_DESERT     = (170, 150, 100)
+C_ICE        = (210, 225, 240)
 
 
 # ─── UTILITIES ────────────────────────────────────────────
@@ -53,7 +59,6 @@ def lerp_color(c1, c2, t):
 
 
 def world_to_screen(wx, wy, cam_x, cam_y, zoom):
-    """Convert physics world coords to screen pixel coords."""
     sx = WIDTH // 2 + (wx - cam_x) * zoom
     sy = VIEW_H // 2 - (wy - cam_y) * zoom
     return int(sx), int(sy)
@@ -74,14 +79,11 @@ class RollingGraph:
 
     def draw(self, surface, rect, font):
         x, y, w, h = rect
-        # background
-        pygame.draw.rect(surface, (25, 30, 40), rect)
+        pygame.draw.rect(surface, (22, 28, 38), rect)
         pygame.draw.rect(surface, C_DASH_LINE, rect, 1)
-        # axis lines
         for i in range(1, 4):
             ly = y + h - int(h * i / 4)
-            pygame.draw.line(surface, (35, 40, 50), (x, ly), (x + w, ly))
-        # plot
+            pygame.draw.line(surface, (30, 35, 45), (x, ly), (x + w, ly))
         if len(self.data) > 1:
             pts = []
             step = w / (len(self.data) - 1)
@@ -91,10 +93,8 @@ class RollingGraph:
                 py = y + h - int(frac * (h - 4)) - 2
                 pts.append((px, py))
             pygame.draw.lines(surface, self.color, False, pts, 2)
-        # title
-        lbl = font.render(self.label, True, (180, 180, 180))
+        lbl = font.render(self.label, True, (170, 170, 170))
         surface.blit(lbl, (x + 3, y + 2))
-        # value
         val = self.data[-1] if self.data else 0
         vt = font.render(f"{val:.2f}", True, self.color)
         surface.blit(vt, (x + w - vt.get_width() - 3, y + 2))
@@ -113,16 +113,14 @@ class TrajectoryPlot:
 
     def draw(self, surface, rect, font):
         x, y, w, h = rect
-        pygame.draw.rect(surface, (20, 25, 35), rect)
+        pygame.draw.rect(surface, (18, 22, 32), rect)
         pygame.draw.rect(surface, C_DASH_LINE, rect, 1)
-
         cx, cy = x + w // 2, y + h // 2
-
         if self.draw_earth:
             er = (EARTH_RADIUS / 1000.0) / self.scale * (w / 2)
             if er > 2:
-                pygame.draw.circle(surface, (25, 60, 90), (cx, cy), int(er), 1)
-
+                pygame.draw.circle(surface, (20, 50, 80), (cx, cy), int(er))
+                pygame.draw.circle(surface, (30, 80, 120), (cx, cy), int(er), 1)
         if len(self.pts) > 1:
             screen_pts = []
             for kx, ky in self.pts:
@@ -132,16 +130,15 @@ class TrajectoryPlot:
                 else:
                     sx = x + int((kx / self.scale) * w) + w // 2
                     sy = y + h - int(((ky - EARTH_RADIUS / 1000.0) / self.scale) * h)
-                screen_pts.append((sx, sy))
-            pygame.draw.lines(surface, self.color, False, screen_pts, 2)
-
-        lbl = font.render(self.label, True, (180, 180, 180))
+                screen_pts.append((max(x, min(x + w, sx)), max(y, min(y + h, sy))))
+            if len(screen_pts) > 1:
+                pygame.draw.lines(surface, self.color, False, screen_pts, 2)
+        lbl = font.render(self.label, True, (170, 170, 170))
         surface.blit(lbl, (x + 3, y + 2))
 
 
 # ─── DRAWING FUNCTIONS ───────────────────────────────────
 def draw_sky(surface, alt):
-    """Gradient sky that transitions to black space."""
     t = min(1.0, alt / 100000.0)
     for row in range(VIEW_H):
         frac = row / VIEW_H
@@ -151,40 +148,69 @@ def draw_sky(surface, alt):
 
 
 def draw_stars(surface, alt):
-    """Draw stars when high altitude."""
     if alt > 30000:
         brightness = min(255, int((alt - 30000) / 70000 * 255))
         random.seed(12345)
-        for _ in range(120):
+        for _ in range(150):
             sx = random.randint(0, WIDTH)
             sy = random.randint(0, VIEW_H)
             sz = random.randint(1, 3)
             pygame.draw.circle(surface, (brightness, brightness, brightness), (sx, sy), sz)
 
 
-def draw_earth_curve(surface, cam_x, cam_y, zoom, alt):
-    """Draw the curved Earth surface when at high altitude."""
-    if alt > 20000:
-        center_x, center_y = world_to_screen(0, 0, cam_x, cam_y, zoom)
-        radius_px = int(EARTH_RADIUS * zoom)
-        if radius_px > 5 and radius_px < 1e7:
-            pygame.draw.circle(surface, C_GROUND, (center_x, center_y), radius_px)
-            # Ocean layer
-            pygame.draw.circle(surface, (30, 80, 140), (center_x, center_y), radius_px, 3)
+def draw_earth_detailed(surface, cam_x, cam_y, zoom, alt):
+    """Detailed Earth with continent patches, ice caps, and atmosphere glow."""
+    center_x, center_y = world_to_screen(0, 0, cam_x, cam_y, zoom)
+    radius_px = int(EARTH_RADIUS * zoom)
+
+    if radius_px < 5 or radius_px > 5e6:
+        return
+
+    # Atmosphere glow (3 layers)
+    for i in range(3):
+        glow_r = radius_px + int(radius_px * 0.03 * (3 - i))
+        alpha = 30 + i * 20
+        glow_col = (60 + i * 30, 120 + i * 30, 200 + i * 15)
+        glow_surf = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (*glow_col, alpha), (glow_r, glow_r), glow_r)
+        surface.blit(glow_surf, (center_x - glow_r, center_y - glow_r))
+
+    # Ocean base
+    pygame.draw.circle(surface, C_OCEAN, (center_x, center_y), radius_px)
+
+    # Continent patches — procedural landmasses at fixed angles
+    random.seed(999)
+    continents = [
+        (0.15, 0.3, 0.25, 0.35, C_LAND1),     # North America-ish
+        (-0.1, -0.2, 0.2, 0.25, C_LAND2),      # South America-ish
+        (0.5, 0.25, 0.15, 0.30, C_LAND1),       # Europe/Africa-ish
+        (0.55, -0.1, 0.12, 0.20, C_DESERT),     # Sahara
+        (0.8, 0.15, 0.20, 0.15, C_LAND3),       # Asia-ish
+        (-0.3, 0.1, 0.12, 0.08, C_LAND2),       # Pacific islands
+        (0.0, -0.6, 0.3, 0.1, C_ICE),           # Antarctica
+        (0.0, 0.65, 0.15, 0.08, C_ICE),         # Arctic
+    ]
+    for cx_frac, cy_frac, w_frac, h_frac, color in continents:
+        lx = center_x + int(cx_frac * radius_px) - int(w_frac * radius_px / 2)
+        ly = center_y - int(cy_frac * radius_px) - int(h_frac * radius_px / 2)
+        lw = max(2, int(w_frac * radius_px))
+        lh = max(2, int(h_frac * radius_px))
+        # Clip to circle using ellipse
+        land_surf = pygame.Surface((lw, lh), pygame.SRCALPHA)
+        pygame.draw.ellipse(land_surf, (*color, 220), (0, 0, lw, lh))
+        surface.blit(land_surf, (lx, ly))
+
+    # Outline
+    pygame.draw.circle(surface, (60, 130, 200), (center_x, center_y), radius_px, 2)
 
 
 def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
-    """Draw flat ground, launch pad, VAB, tower — all in screen space."""
-    # Ground plane (extends far left and right)
     g_left_x, g_left_y = world_to_screen(-50000, EARTH_RADIUS, cam_x, cam_y, zoom)
-    g_right_x, g_right_y = world_to_screen(50000, EARTH_RADIUS, cam_x, cam_y, zoom)
     ground_rect_h = VIEW_H - g_left_y
     if ground_rect_h > 0 and g_left_y < VIEW_H:
         pygame.draw.rect(surface, C_GROUND, (0, g_left_y, WIDTH, ground_rect_h + 10))
-        # darker stripe
         pygame.draw.rect(surface, C_GROUND_DK, (0, g_left_y, WIDTH, max(2, int(3 * zoom))))
 
-    # Pad
     def ws(wx, wy):
         return world_to_screen(wx, wy + EARTH_RADIUS, cam_x, cam_y, zoom)
 
@@ -205,22 +231,17 @@ def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
         pygame.draw.rect(surface, C_PAD_DARK, (tr_tl[0], tr_br[1], tw_, th))
 
     # Road
-    rd_tl = ws(-6, -1)
-    rd_br = ws(6, 0)
-    rd_end = ws(-6, -1)
-    rd_far = ws(6, -200)
-    if abs(rd_tl[0] - rd_br[0]) > 1:
+    if abs(ws(-5, 0)[0] - ws(5, 0)[0]) > 1:
         pygame.draw.line(surface, C_ROAD, ws(-5, 0), ws(-5, -200), max(1, int(10 * zoom)))
         pygame.draw.line(surface, C_ROAD, ws(5, 0), ws(5, -200), max(1, int(10 * zoom)))
 
-    # VAB building
+    # VAB
     vab_bl = ws(-260, 0)
     vab_tr = ws(-140, 80)
     vw = vab_tr[0] - vab_bl[0]
     vh = vab_bl[1] - vab_tr[1]
     if vw > 3:
         pygame.draw.rect(surface, C_VAB, (vab_bl[0], vab_tr[1], vw, vh))
-        # door
         dw = vw // 3
         dh = vh * 3 // 4
         pygame.draw.rect(surface, C_VAB_DOOR, (vab_bl[0] + vw // 2 - dw // 2, vab_tr[1] + vh - dh, dw, dh))
@@ -232,19 +253,13 @@ def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
     twh = tw_bl[1] - tw_tr[1]
     if tww > 1:
         pygame.draw.rect(surface, C_TOWER, (tw_bl[0], tw_tr[1], tww, twh))
-        # arms
-        arm1_l = ws(6, 40)
-        arm1_r = ws(16, 43)
-        aw = arm1_r[0] - arm1_l[0]
-        ah = arm1_l[1] - arm1_r[1]
-        if aw > 1:
-            pygame.draw.rect(surface, C_TOWER, (arm1_l[0], arm1_r[1], aw, max(ah, 2)))
-        arm2_l = ws(6, 25)
-        arm2_r = ws(16, 28)
-        aw2 = arm2_r[0] - arm2_l[0]
-        ah2 = arm2_l[1] - arm2_r[1]
-        if aw2 > 1:
-            pygame.draw.rect(surface, C_TOWER, (arm2_l[0], arm2_r[1], aw2, max(ah2, 2)))
+        for arm_y in [25, 40]:
+            al = ws(6, arm_y)
+            ar = ws(16, arm_y + 3)
+            aw = ar[0] - al[0]
+            ah = al[1] - ar[1]
+            if aw > 1:
+                pygame.draw.rect(surface, C_TOWER, (al[0], ar[1], aw, max(ah, 2)))
 
     # Lightning rods
     for lx in [-30, 30]:
@@ -254,100 +269,74 @@ def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
 
 
 def draw_clouds(surface, cam_x, cam_y, zoom, cloud_data):
-    """Draw simple cloud ellipses."""
     for cx, cy, cw, ch in cloud_data:
         sx, sy = world_to_screen(cx, cy + EARTH_RADIUS, cam_x, cam_y, zoom)
         pw = max(1, int(cw * zoom))
         ph = max(1, int(ch * zoom))
         if 0 < sx < WIDTH and 0 < sy < VIEW_H and pw < 2000:
             cloud_surf = pygame.Surface((pw, ph), pygame.SRCALPHA)
-            pygame.draw.ellipse(cloud_surf, (*C_CLOUD, 140), (0, 0, pw, ph))
+            pygame.draw.ellipse(cloud_surf, (*C_CLOUD, 130), (0, 0, pw, ph))
             surface.blit(cloud_surf, (sx - pw // 2, sy - ph // 2))
 
 
 def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase):
-    """Draw the Artemis-style SLS rocket."""
     alt = rocket.get_altitude()
     rx, ry = rocket.x, rocket.y
     pitch = rocket.pitch_angle
 
     def rotated_offset(dx, dy):
-        """Rotate (dx, dy) by pitch angle and return world coords."""
         c = math.cos(pitch)
         s = math.sin(pitch)
         return rx + dx * (-s) + dy * c, ry + dx * c + dy * s
 
     def draw_part(dx, dy, w, h, color):
-        """Draw a rotated rectangle representing a rocket part."""
-        corners_local = [
-            (-w / 2, 0), (w / 2, 0), (w / 2, h), (-w / 2, h)
-        ]
-        screen_corners = []
-        for clx, cly in corners_local:
-            wx, wy = rotated_offset(dx + clx, dy + cly)
-            screen_corners.append(world_to_screen(wx, wy, cam_x, cam_y, zoom))
-        pygame.draw.polygon(surface, color, screen_corners)
+        corners = [(-w / 2, 0), (w / 2, 0), (w / 2, h), (-w / 2, h)]
+        sc = [world_to_screen(*rotated_offset(dx + cx, dy + cy), cam_x, cam_y, zoom) for cx, cy in corners]
+        pygame.draw.polygon(surface, color, sc)
+        pygame.draw.polygon(surface, tuple(max(0, c - 30) for c in color), sc, 1)
 
     def draw_triangle(dx, dy, w, h, color):
-        """Draw a rotated triangle (nose cone / nozzle)."""
-        pts_local = [(-w / 2, 0), (w / 2, 0), (0, h)]
-        screen_pts = []
-        for clx, cly in pts_local:
-            wx, wy = rotated_offset(dx + clx, dy + cly)
-            screen_pts.append(world_to_screen(wx, wy, cam_x, cam_y, zoom))
-        pygame.draw.polygon(surface, color, screen_pts)
+        pts = [(-w / 2, 0), (w / 2, 0), (0, h)]
+        sc = [world_to_screen(*rotated_offset(dx + cx, dy + cy), cam_x, cam_y, zoom) for cx, cy in pts]
+        pygame.draw.polygon(surface, color, sc)
 
-    # SRBs (only if stage 0)
+    # SRBs
     if rocket.current_stage_index == 0:
         for side in [-5.5, 5.5]:
             draw_part(side, 0, 3.6, 30, C_WHITE)
             draw_triangle(side, 30, 3.6, 4, C_WHITE)
-            # SRB nozzle
             draw_triangle(side, -3, 2.4, -3, C_NOZZLE)
 
-    # Core stage (orange) — present until stage index > 1
+    # Core
     if rocket.current_stage_index <= 1:
         draw_part(0, 0, 8.4, 42, C_ORANGE)
-        # Core nozzles
         for nx in [-2, 0, 2]:
             draw_triangle(nx, -2, 1.6, -2.5, C_NOZZLE)
 
-    # Upper stage (white)
+    # Upper stage
     draw_part(0, 42, 7, 8, C_WHITE)
-
-    # Orion capsule
+    # Orion
     draw_part(0, 50, 5, 5, C_WHITE)
     draw_triangle(0, 55, 5, 5, C_WHITE)
-
     # LES needle
-    tip_b = rotated_offset(0, 60)
-    tip_t = rotated_offset(0, 64)
-    sb = world_to_screen(*tip_b, cam_x, cam_y, zoom)
-    st_ = world_to_screen(*tip_t, cam_x, cam_y, zoom)
+    sb = world_to_screen(*rotated_offset(0, 60), cam_x, cam_y, zoom)
+    st_ = world_to_screen(*rotated_offset(0, 64), cam_x, cam_y, zoom)
     pygame.draw.line(surface, (150, 150, 150), sb, st_, max(1, int(0.3 * zoom)))
 
-    # --- Flame ---
-    is_active = (
-        rocket.current_stage_index < len(rocket.stages)
-        and rocket.stages[rocket.current_stage_index].active
-    )
+    # Flame
+    is_active = (rocket.current_stage_index < len(rocket.stages) and rocket.stages[rocket.current_stage_index].active)
     if is_active and phase != FlightPhase.PRELAUNCH:
         vac_expand = 1.0 + min(alt / 40000.0, 3.0)
         flame_w = 4.0 * vac_expand
         if rocket.current_stage_index == 0:
             flame_w = 8.0 * vac_expand
         flame_l = random.uniform(15, 30) * vac_expand
-
-        # Outer flame
         draw_triangle(0, -3, flame_w * 1.2, -flame_l, C_FLAME_OUT)
-        # Middle flame
         draw_triangle(0, -3, flame_w * 0.7, -flame_l * 0.8, C_FLAME_MID)
-        # Inner flame
         draw_triangle(0, -3, flame_w * 0.3, -flame_l * 0.6, C_FLAME_IN)
 
 
 def draw_debris(surface, debris, cam_x, cam_y, zoom):
-    """Draw separated stages tumbling."""
     for d in debris:
         sx, sy = world_to_screen(d["x"], d["y"], cam_x, cam_y, zoom)
         size = max(2, int(5 * zoom))
@@ -355,108 +344,130 @@ def draw_debris(surface, debris, cam_x, cam_y, zoom):
         pygame.draw.rect(surface, C_NOZZLE, (sx - size // 2, sy, size, size // 2))
 
 
-def draw_dashboard(surface, font, font_sm, rocket, world, graphs, traj_local, traj_orbit):
-    """Draw the bottom telemetry dashboard."""
+def draw_dashboard(surface, font, font_sm, font_tiny, rocket, world, graphs, traj_local, traj_orbit):
     dash_y = VIEW_H
-    # Background
     pygame.draw.rect(surface, C_DASH_BG, (0, dash_y, WIDTH, DASH_H))
     pygame.draw.line(surface, C_DASH_LINE, (0, dash_y), (WIDTH, dash_y), 2)
 
     alt = rocket.get_altitude()
     vel = rocket.get_velocity_mag()
-
-    # --- Left column: big readouts ---
-    col_x = 15
-    surface.blit(font.render(f"SPEED: {vel:.1f} m/s", True, C_GREEN_GO), (col_x, dash_y + 15))
-    surface.blit(font.render(f"ALTITUDE: {alt:.1f} m", True, C_CYAN), (col_x, dash_y + 40))
-
     pitch_deg = math.degrees(rocket.pitch_angle) if hasattr(rocket, 'pitch_angle') else 90
     incl = max(0, 90.0 - pitch_deg)
-    surface.blit(font_sm.render(f"G-LOAD: {graphs['gforce_val']:.2f}", True, C_MAGENTA), (col_x, dash_y + 65))
-    surface.blit(font_sm.render(f"Inclination: {incl:.1f}\u00b0", True, C_TEXT), (col_x, dash_y + 85))
-    surface.blit(font_sm.render(f"Mass: {rocket.get_total_mass():.0f} kg", True, C_TEXT), (col_x, dash_y + 105))
-
-    # Stage indicator text
     stg = rocket.current_stage_index
     stg_name = rocket.stages[stg].name if stg < len(rocket.stages) else "COAST"
-    surface.blit(font_sm.render(f"Stage: {stg_name}", True, C_YELLOW), (col_x, dash_y + 130))
 
-    # --- Graphs ---
-    gw, gh = 145, 130
-    gx_start = 220
-    gap = 10
+    # --- Left column: readouts ---
+    col_x = 12
+    ly = dash_y + 8
+    surface.blit(font.render(f"SPEED: {vel:.1f} m/s", True, C_GREEN_GO), (col_x, ly)); ly += 22
+    surface.blit(font.render(f"ALT: {alt:.1f} m", True, C_CYAN), (col_x, ly)); ly += 22
+    surface.blit(font_sm.render(f"G-LOAD: {graphs['gforce_val']:.2f}", True, C_MAGENTA), (col_x, ly)); ly += 18
+    surface.blit(font_sm.render(f"Pitch: {pitch_deg:.1f}\u00b0", True, C_TEXT), (col_x, ly)); ly += 18
+    surface.blit(font_sm.render(f"Incl: {incl:.1f}\u00b0", True, C_TEXT), (col_x, ly)); ly += 18
+    surface.blit(font_sm.render(f"Mass: {rocket.get_total_mass():.0f} kg", True, C_TEXT), (col_x, ly)); ly += 18
+    surface.blit(font_sm.render(f"Stage: {stg_name}", True, C_YELLOW), (col_x, ly)); ly += 18
+    # Fuel remaining
+    if stg < len(rocket.stages):
+        fuel_pct = rocket.stages[stg].fuel_system.fuel / (rocket.stages[stg].fuel_system.fuel + rocket.stages[stg].fuel_system.consumed + 0.001) * 100
+        bar_w = 100
+        bar_h = 12
+        pygame.draw.rect(surface, (40, 40, 40), (col_x, ly, bar_w, bar_h))
+        fill_w = int(bar_w * fuel_pct / 100)
+        bar_color = C_GREEN_GO if fuel_pct > 30 else C_YELLOW if fuel_pct > 10 else C_RED
+        pygame.draw.rect(surface, bar_color, (col_x, ly, fill_w, bar_h))
+        pygame.draw.rect(surface, C_DASH_LINE, (col_x, ly, bar_w, bar_h), 1)
+        surface.blit(font_tiny.render(f"FUEL {fuel_pct:.0f}%", True, C_TEXT), (col_x + bar_w + 5, ly))
 
-    for i, key in enumerate(["alt", "vel", "maxq"]):
+    # --- Controls info ---
+    ctrl_y = dash_y + DASH_H - 22
+    ctrl_txt = "W/S Pitch | \u2190/\u2192 Warp | Space Launch | C Cam | R Reset"
+    surface.blit(font_tiny.render(ctrl_txt, True, (120, 120, 120)), (col_x, ctrl_y))
+
+    # --- Row 1 graphs ---
+    gw = 155
+    gh_top = 105
+    gh_bot = 105
+    gx_start = 170
+    gap = 8
+
+    row1_y = dash_y + 10
+    row2_y = dash_y + 10 + gh_top + 8
+
+    # Row 1: Alt, Vel, Max-Q, G-Force
+    for i, key in enumerate(["alt", "vel", "maxq", "gforce"]):
         gx = gx_start + i * (gw + gap)
-        graphs[key].draw(surface, (gx, dash_y + 25, gw, gh), font_sm)
+        graphs[key].draw(surface, (gx, row1_y, gw, gh_top), font_tiny)
 
-    # Trajectory plots
-    tx = gx_start + 3 * (gw + gap)
-    traj_local.draw(surface, (tx, dash_y + 25, gw, gh), font_sm)
-    traj_orbit.draw(surface, (tx + gw + gap, dash_y + 25, gw, gh), font_sm)
+    # Row 2: Thrust, Fuel, Ascent Profile, Global Orbit
+    for i, key in enumerate(["thrust", "fuel_graph"]):
+        gx = gx_start + i * (gw + gap)
+        graphs[key].draw(surface, (gx, row2_y, gw, gh_bot), font_tiny)
+
+    tx = gx_start + 2 * (gw + gap)
+    traj_local.draw(surface, (tx, row2_y, gw, gh_bot), font_tiny)
+    traj_orbit.draw(surface, (tx + gw + gap, row2_y, gw, gh_bot), font_tiny)
 
     # --- System Health (rightmost) ---
-    hx = tx + 2 * (gw + gap) + 10
-    surface.blit(font.render("System Health", True, C_TEXT), (hx, dash_y + 15))
+    hx = gx_start + 4 * (gw + gap) + 10
+    surface.blit(font.render("System Health", True, C_TEXT), (hx, row1_y))
     systems = ["Avionics", "Propulsion", "Thermal", "Propellant", "Navigation", "Comms"]
     for i, name in enumerate(systems):
-        sy_ = dash_y + 40 + i * 22
-        surface.blit(font_sm.render(name, True, (170, 170, 170)), (hx, sy_))
-        surface.blit(font_sm.render("GO", True, C_GREEN_GO), (hx + 95, sy_))
+        sy_ = row1_y + 22 + i * 20
+        surface.blit(font_sm.render(name, True, (160, 160, 160)), (hx, sy_))
+        surface.blit(font_sm.render("GO", True, C_GREEN_GO), (hx + 100, sy_))
+
+    # Phase under health
+    phase_names_short = {
+        0: "PRE", 1: "LIFT", 2: "MAX-Q", 3: "G-TURN",
+        4: "SRB SEP", 5: "FAIR SEP", 6: "STG 2", 7: "SECO"
+    }
+    phase_str = phase_names_short.get(world.phase, "?")
+    surface.blit(font.render(f"PHASE: {phase_str}", True, C_YELLOW), (hx, row2_y + 10))
+    surface.blit(font_sm.render(f"T: {format_time(world.time_elapsed)}", True, C_TEXT), (hx, row2_y + 35))
+    surface.blit(font_sm.render(f"Warp: {world.time_warp:.0f}x", True, C_TEXT), (hx, row2_y + 55))
+    # Downrange
+    downrange = abs(rocket.x) / 1000.0
+    surface.blit(font_sm.render(f"Range: {downrange:.1f} km", True, C_TEXT), (hx, row2_y + 75))
 
 
 def draw_hud(surface, font, font_lg, world, phase):
-    """Draw the top HUD overlay."""
     elapsed = world.time_elapsed
     warp = world.time_warp
 
-    # Time
     time_str = f"T: {format_time(elapsed)} | WARP: {warp:.0f}x"
-    surface.blit(font.render(time_str, True, C_TEXT), (15, 10))
+    surface.blit(font.render(time_str, True, C_TEXT), (15, 8))
 
-    # Controls
-    ctrl = "[Spacebar] LAUNCH  |  C CAMERA  |  \u2190/\u2192 WARP  |  R RESTART"
-    ctrl_surf = font.render(ctrl, True, (180, 180, 180))
-    surface.blit(ctrl_surf, (WIDTH // 2 - ctrl_surf.get_width() // 2, 10))
-
-    # Phase box
-    event_str = PHASE_NAMES.get(phase, "UNKNOWN")
     phase_map = {
         0: "T-MINUS (PRELAUNCH)", 1: "LIFTOFF",
         2: "MAX-Q (MAX DYNAMIC PRESSURE)", 3: "GRAVITY TURN",
         4: "SRB SEPARATION", 5: "FAIRING SEPARATION",
         6: "CORE SEP / STAGE 2", 7: "SECO (ORBITAL INSERTION)"
     }
-    event_str = phase_map.get(phase, event_str)
-    phase_surf = font_lg.render(f"  PHASE: {event_str}  ", True, C_YELLOW, (20, 20, 20))
-    surface.blit(phase_surf, (WIDTH // 2 - phase_surf.get_width() // 2, 35))
+    event_str = phase_map.get(phase, PHASE_NAMES.get(phase, "UNKNOWN"))
+    phase_surf = font_lg.render(f"  PHASE: {event_str}  ", True, C_YELLOW, (15, 15, 20))
+    surface.blit(phase_surf, (WIDTH // 2 - phase_surf.get_width() // 2, 30))
 
     # Restart button
-    pygame.draw.rect(surface, (50, 55, 65), (WIDTH - 110, 8, 100, 30), border_radius=4)
-    pygame.draw.rect(surface, C_DASH_LINE, (WIDTH - 110, 8, 100, 30), 1, border_radius=4)
-    surface.blit(font.render("RESTART", True, C_TEXT), (WIDTH - 100, 14))
+    pygame.draw.rect(surface, (50, 55, 65), (WIDTH - 115, 6, 105, 28), border_radius=4)
+    pygame.draw.rect(surface, C_DASH_LINE, (WIDTH - 115, 6, 105, 28), 1, border_radius=4)
+    surface.blit(font.render("RESTART", True, C_TEXT), (WIDTH - 105, 10))
 
 
 # ─── MAIN APPLICATION ────────────────────────────────────
 def run_app():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Rocket Mission Simulator — Artemis II")
+    pygame.display.set_caption("Rocket Mission Simulator \u2014 Artemis II")
     clock = pygame.time.Clock()
 
-    font = pygame.font.SysFont("Menlo", 16)
-    font_sm = pygame.font.SysFont("Menlo", 13)
-    font_lg = pygame.font.SysFont("Menlo", 20, bold=True)
+    font = pygame.font.SysFont("Menlo", 15)
+    font_sm = pygame.font.SysFont("Menlo", 12)
+    font_lg = pygame.font.SysFont("Menlo", 18, bold=True)
+    font_tiny = pygame.font.SysFont("Menlo", 11)
 
-    # --- Generate cloud data once ---
     random.seed(42)
-    clouds = []
-    for _ in range(50):
-        cx = random.uniform(-15000, 15000)
-        cy = random.uniform(2000, 7000)
-        cw = random.uniform(200, 800)
-        ch = random.uniform(60, 200)
-        clouds.append((cx, cy, cw, ch))
+    clouds = [(random.uniform(-15000, 15000), random.uniform(2000, 7000),
+               random.uniform(200, 800), random.uniform(60, 200)) for _ in range(50)]
 
     def init_world():
         mission = MissionProfile("FALCON_9", "LEO")
@@ -464,26 +475,31 @@ def run_app():
         w.time_warp = 1.0
         return w
 
-    world = init_world()
+    def make_graphs():
+        return {
+            "alt": RollingGraph(max_pts=80, max_val=200, color=C_CYAN, label="Alt (km)"),
+            "vel": RollingGraph(max_pts=80, max_val=8, color=(255, 130, 0), label="Vel (km/s)"),
+            "maxq": RollingGraph(max_pts=80, max_val=50, color=C_RED, label="Max-Q (kPa)"),
+            "gforce": RollingGraph(max_pts=80, max_val=5, color=C_MAGENTA, label="G-Force"),
+            "thrust": RollingGraph(max_pts=80, max_val=40000, color=C_YELLOW, label="Thrust (kN)"),
+            "fuel_graph": RollingGraph(max_pts=80, max_val=100, color=C_GREEN_GO, label="Fuel (%)"),
+            "gforce_val": 1.0,
+        }
 
-    # Graphs
-    g_alt = RollingGraph(max_pts=80, max_val=200, color=C_CYAN, label="Alt (km)")
-    g_vel = RollingGraph(max_pts=80, max_val=8, color=(255, 130, 0), label="Vel (km/s)")
-    g_q = RollingGraph(max_pts=80, max_val=50, color=C_RED, label="Max-Q (kPa)")
+    world = init_world()
+    graphs = make_graphs()
     traj_local = TrajectoryPlot(scale=500, color=C_YELLOW, label="Ascent Profile")
     traj_orbit = TrajectoryPlot(scale=15000, color=C_MAGENTA, label="Global Orbit", draw_earth=True)
 
     graph_timer = 0.0
     last_vel = 0.0
-    gforce_val = 1.0
-
     cam_mode = 0
+    manual_pitch_offset = 0.0
     running = True
 
     while running:
         dt = clock.tick(FPS) / 1000.0
 
-        # --- Events ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -503,34 +519,42 @@ def run_app():
                     cam_mode = (cam_mode + 1) % 3
                 elif event.key == pygame.K_r:
                     world = init_world()
-                    g_alt = RollingGraph(max_pts=80, max_val=200, color=C_CYAN, label="Alt (km)")
-                    g_vel = RollingGraph(max_pts=80, max_val=8, color=(255, 130, 0), label="Vel (km/s)")
-                    g_q = RollingGraph(max_pts=80, max_val=50, color=C_RED, label="Max-Q (kPa)")
+                    graphs = make_graphs()
                     traj_local = TrajectoryPlot(scale=500, color=C_YELLOW, label="Ascent Profile")
                     traj_orbit = TrajectoryPlot(scale=15000, color=C_MAGENTA, label="Global Orbit", draw_earth=True)
                     last_vel = 0
-                    gforce_val = 1.0
                     cam_mode = 0
+                    manual_pitch_offset = 0.0
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
-                if WIDTH - 110 <= mx <= WIDTH - 10 and 8 <= my <= 38:
+                if WIDTH - 115 <= mx <= WIDTH - 10 and 6 <= my <= 34:
                     world = init_world()
-                    g_alt = RollingGraph(max_pts=80, max_val=200, color=C_CYAN, label="Alt (km)")
-                    g_vel = RollingGraph(max_pts=80, max_val=8, color=(255, 130, 0), label="Vel (km/s)")
-                    g_q = RollingGraph(max_pts=80, max_val=50, color=C_RED, label="Max-Q (kPa)")
+                    graphs = make_graphs()
                     traj_local = TrajectoryPlot(scale=500, color=C_YELLOW, label="Ascent Profile")
                     traj_orbit = TrajectoryPlot(scale=15000, color=C_MAGENTA, label="Global Orbit", draw_earth=True)
                     last_vel = 0
-                    gforce_val = 1.0
                     cam_mode = 0
+                    manual_pitch_offset = 0.0
 
-        # --- Physics ---
+        # Continuous key input for pitch control
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_w]:
+            manual_pitch_offset += 0.5 * dt
+        if keys[pygame.K_s]:
+            manual_pitch_offset -= 0.5 * dt
+        manual_pitch_offset = max(-0.5, min(0.5, manual_pitch_offset))
+
+        # Apply manual pitch offset
+        if world.phase != FlightPhase.PRELAUNCH:
+            world.rocket.pitch_angle += manual_pitch_offset * dt * 2
+
+        # Physics
         world.update(dt)
         rocket = world.rocket
         alt = rocket.get_altitude()
         vel = rocket.get_velocity_mag()
 
-        # --- Camera ---
+        # Camera
         if cam_mode == 0:
             if alt < 300:
                 cam_x, cam_y = -30, EARTH_RADIUS + 40
@@ -547,10 +571,9 @@ def run_app():
             cam_x = rocket.x
             cam_y = rocket.y
             zoom = max(0.0001, 0.001 - alt / 50000000.0)
-
         zoom = max(zoom, 0.00005)
 
-        # --- Graph updates (every 0.2s) ---
+        # Graph updates
         graph_timer += dt
         if graph_timer >= 0.2:
             accel = (vel - last_vel) / graph_timer if graph_timer > 0 else 0
@@ -558,13 +581,32 @@ def run_app():
             gforce_val = abs(accel / 9.81)
             if alt < 10:
                 gforce_val = 1.0
+            graphs["gforce_val"] = gforce_val
 
             rho = 1.225 * math.exp(-alt / 8500.0) if alt > 0 else 1.225
             q = 0.5 * rho * vel ** 2
 
-            g_alt.push(alt / 1000.0)
-            g_vel.push(vel / 1000.0)
-            g_q.push(q / 1000.0)
+            graphs["alt"].push(alt / 1000.0)
+            graphs["vel"].push(vel / 1000.0)
+            graphs["maxq"].push(q / 1000.0)
+            graphs["gforce"].push(gforce_val)
+
+            # Thrust
+            stg = rocket.current_stage_index
+            if stg < len(rocket.stages) and rocket.stages[stg].active:
+                t_kn = rocket.stages[stg].thrust_sl / 1000.0
+            else:
+                t_kn = 0
+            graphs["thrust"].push(t_kn)
+
+            # Fuel %
+            if stg < len(rocket.stages):
+                fs = rocket.stages[stg].fuel_system
+                fuel_pct = fs.fuel / (fs.fuel + fs.consumed + 0.001) * 100
+            else:
+                fuel_pct = 0
+            graphs["fuel_graph"].push(fuel_pct)
+
             traj_local.push(rocket.x, rocket.y)
             traj_orbit.push(rocket.x, rocket.y)
             graph_timer = 0.0
@@ -573,9 +615,8 @@ def run_app():
         draw_sky(screen, alt)
         draw_stars(screen, alt)
 
-        # At very high alt, draw curved Earth
         if alt > 20000:
-            draw_earth_curve(screen, cam_x, cam_y, zoom, alt)
+            draw_earth_detailed(screen, cam_x, cam_y, zoom, alt)
         else:
             draw_ground_and_pad(screen, cam_x, cam_y, zoom)
             draw_clouds(screen, cam_x, cam_y, zoom, clouds)
@@ -583,8 +624,7 @@ def run_app():
         draw_debris(screen, world.debris, cam_x, cam_y, zoom)
         draw_rocket(screen, rocket, cam_x, cam_y, zoom, world.phase)
 
-        graphs_dict = {"alt": g_alt, "vel": g_vel, "maxq": g_q, "gforce_val": gforce_val}
-        draw_dashboard(screen, font, font_sm, rocket, world, graphs_dict, traj_local, traj_orbit)
+        draw_dashboard(screen, font, font_sm, font_tiny, rocket, world, graphs, traj_local, traj_orbit)
         draw_hud(screen, font, font_lg, world, world.phase)
 
         pygame.display.flip()
