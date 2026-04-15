@@ -40,11 +40,13 @@ class AppEngine(ShowBase):
         
     def restart_mission(self):
         self.rocket_viz.head_node.removeNode()
+        self.rocket_viz.flame.removeNode()
         for dv in self.rocket_viz.debris_visuals:
             dv["node"].removeNode()
         self.earth.destroy()
         self.pad.pad_root.removeNode()
         self.scene.destroy()
+        self.render.clearFog()
         
         self.init_simulation()
         

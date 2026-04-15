@@ -1,10 +1,9 @@
-# main.py
+# main.py — Pygame-based Rocket Mission Simulator
 import sys
-from rendering3d.engine import AppEngine
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-def main():
-    app = AppEngine()
-    app.run()
+from rendering_pygame.app import run_app
 
 if __name__ == "__main__":
-    main()
+    run_app()
