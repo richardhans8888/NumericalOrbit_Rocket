@@ -297,6 +297,44 @@ def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
     return surf
 
 
+def render_satellite_sprite(bus_w_px, bus_h_px):
+    bus_w_px = max(10, int(bus_w_px))
+    bus_h_px = max(8, int(bus_h_px))
+    pad = max(10, int(bus_w_px * 0.9))
+    surf = pygame.Surface((bus_w_px + pad * 2, bus_h_px + pad * 2), pygame.SRCALPHA)
+    cx = surf.get_width() // 2
+    cy = surf.get_height() // 2
+
+    body = pygame.Rect(cx - bus_w_px // 2, cy - bus_h_px // 2, bus_w_px, bus_h_px)
+    pygame.draw.rect(surf, (15, 18, 24, 160), body.inflate(6, 6), border_radius=4)
+    cylinder_fill(surf, body, (220, 222, 226), edge_color=(65, 70, 85), highlight=True)
+
+    dish_r = max(4, int(bus_h_px * 0.55))
+    dish_cx = body.right + max(5, int(bus_w_px * 0.2))
+    dish_cy = cy
+    pygame.draw.circle(surf, (35, 38, 48, 150), (dish_cx, dish_cy), dish_r + 2)
+    pygame.draw.circle(surf, (205, 205, 210, 230), (dish_cx, dish_cy), dish_r, 2)
+    pygame.draw.circle(surf, (145, 145, 150, 140), (dish_cx, dish_cy), max(2, dish_r - 3), 0)
+    pygame.draw.line(surf, (120, 120, 125, 180), (body.right - 1, dish_cy), (dish_cx - dish_r + 2, dish_cy), 2)
+
+    panel_w = max(14, int(bus_w_px * 1.25))
+    panel_h = max(6, int(bus_h_px * 0.85))
+    gap = max(3, int(bus_w_px * 0.18))
+    for sgn in (-1, 1):
+        px0 = cx + sgn * (bus_w_px // 2 + gap)
+        panel = pygame.Rect(px0 - panel_w // 2, cy - panel_h // 2, panel_w, panel_h)
+        pygame.draw.rect(surf, (10, 14, 26, 200), panel, border_radius=2)
+        pygame.draw.rect(surf, (0, 200, 255, 120), panel, 1, border_radius=2)
+        cell_w = max(3, panel_w // 6)
+        for i in range(1, 6):
+            xx = panel.x + i * cell_w
+            pygame.draw.line(surf, (0, 90, 130, 120), (xx, panel.y + 1), (xx, panel.bottom - 2), 1)
+        pygame.draw.line(surf, (0, 90, 130, 120), (panel.x + 1, cy), (panel.right - 2, cy), 1)
+        pygame.draw.line(surf, (150, 155, 165, 180), (body.centerx + sgn * (bus_w_px // 2), cy), (panel.centerx - sgn * (panel_w // 2), cy), 2)
+
+    return surf
+
+
 def spawn_exhaust(particles, rocket, manual_throttle, dt, intensity=1.0):
     if manual_throttle <= 0:
         return
@@ -844,6 +882,33 @@ def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase):
     base_sx, base_sy = world_to_screen(rx, ry, cam_x, cam_y, zoom)
 
     if base_sy > VIEW_H + 200 or base_sx < VIEW_X - 300 or base_sx > WIDTH + 300:
+        return
+
+    if phase == FlightPhase.SECO:
+        cache = getattr(draw_rocket, "_sat_cache", None)
+        if cache is None:
+            cache = {}
+            setattr(draw_rocket, "_sat_cache", cache)
+
+        bus_w_px = max(10, int(3.6 * zoom))
+        bus_h_px = max(8, int(2.6 * zoom))
+        key = (bus_w_px, bus_h_px)
+        spr = cache.get(key)
+        if spr is None:
+            spr = render_satellite_sprite(bus_w_px, bus_h_px)
+            cache[key] = spr
+
+        vmag = math.hypot(rocket.vx, rocket.vy)
+        ang = math.atan2(rocket.vy, rocket.vx) if vmag > 0.1 else pitch
+        rot_deg = math.degrees(ang)
+        rot = pygame.transform.rotate(spr, -rot_deg)
+        rect = rot.get_rect(center=(base_sx, base_sy))
+
+        glint = pygame.Surface((rot.get_width(), rot.get_height()), pygame.SRCALPHA)
+        glint.blit(rot, (0, 0))
+        glint.fill((255, 255, 255, 40), special_flags=pygame.BLEND_RGBA_ADD)
+        surface.blit(glint, (rect.x + 1, rect.y - 1))
+        surface.blit(rot, rect.topleft)
         return
 
     core_h_m = 64.0
