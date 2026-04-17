@@ -54,7 +54,7 @@ class Rocket:
         if self.current_stage_index < len(self.stages):
             self.stages[self.current_stage_index].active = True
             
-    def update_systems(self, dt):
+    def update_systems(self, dt, throttle_pct=1.0):
         thrust_magnitude = 0.0
         event = None
         
@@ -69,8 +69,9 @@ class Rocket:
                 else:
                     ratio = alt / 50000.0
                     t_power = current_stage.thrust_sl + (current_stage.thrust_vac - current_stage.thrust_sl) * ratio
-                    
-                thrust_magnitude = current_stage.update(t_power, dt)
+
+                t_cmd = t_power * max(0.0, min(1.0, throttle_pct))
+                thrust_magnitude = current_stage.update(t_cmd, dt)
                 
                 if current_stage.fuel_system.empty:
                     current_stage.active = False

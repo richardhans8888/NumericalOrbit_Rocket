@@ -14,6 +14,7 @@ class World:
         self.rocket = Rocket(self.mission.vehicle_data)
         self.debris = []
         self.time_elapsed = 0.0
+        self.last_thrust_n = 0.0
         
         self.phase = FlightPhase.PRELAUNCH
         self.time_warp = 1.0
@@ -64,18 +65,29 @@ class World:
                 self.rocket.pitch_angle = radial_angle * pitch_fraction + tangent_angle * (1.0 - pitch_fraction)
         
         # 1. Update Rocket Systems
-        event, thrust_mag_raw = self.rocket.update_systems(dt)
-        thrust_mag = thrust_mag_raw * throttle_pct
+        event, thrust_mag = self.rocket.update_systems(dt, throttle_pct)
+        self.last_thrust_n = thrust_mag
         
         if event == "EVENT_SEPARATION":
             detached = self.rocket.separate_current_stage()
             if detached:
+                pitch = self.rocket.pitch_angle
+                ux = math.cos(pitch)
+                uy = math.sin(pitch)
+                px = -uy
+                py = ux
+                back = 22.0
+                side = 10.0
+                dvx = -ux * back + px * side
+                dvy = -uy * back + py * side
                 self.debris.append({
+                    "kind": "stage",
                     "stage": detached,
                     "x": self.rocket.x,
                     "y": self.rocket.y,
-                    "vx": self.rocket.vx,
-                    "vy": self.rocket.vy
+                    "vx": self.rocket.vx + dvx,
+                    "vy": self.rocket.vy + dvy,
+                    "age": 0.0
                 })
                 self.phase = FlightPhase.BOOSTER_BURNOUT
                 # Jump to second stage phase if applicable
@@ -85,6 +97,21 @@ class World:
         if alt > self.rocket.vehicle_data.get("fairing", {}).get("jettison_altitude", 999999) and self.rocket.fairing_attached:
             self.rocket.jettison_fairing()
             self.phase = FlightPhase.FAIRING_SEP
+            pitch = self.rocket.pitch_angle
+            ux = math.cos(pitch)
+            uy = math.sin(pitch)
+            px = -uy
+            py = ux
+            for sgn in (-1.0, 1.0):
+                self.debris.append({
+                    "kind": "fairing",
+                    "stage": None,
+                    "x": self.rocket.x + px * 3.0 * sgn,
+                    "y": self.rocket.y + py * 3.0 * sgn,
+                    "vx": self.rocket.vx + px * 18.0 * sgn - ux * 6.0,
+                    "vy": self.rocket.vy + py * 18.0 * sgn - uy * 6.0,
+                    "age": 0.0,
+                })
             
         if vel >= self.mission.orbit_data["target_velocity_m_s"] and self.phase != FlightPhase.SECO:
             self.phase = FlightPhase.SECO
@@ -130,7 +157,10 @@ class World:
                 d_vel = math.sqrt(d["vx"]**2 + d["vy"]**2)
                 d_drag_mag = compute_drag_force(d_vel, d_alt, 1.0, 5.0)
                 
-                d_mass = d["stage"].dry_mass
+                if d.get("kind") == "fairing":
+                    d_mass = 250.0
+                else:
+                    d_mass = d["stage"].dry_mass
                 ax_drag = -(d["vx"] / d_vel) * (d_drag_mag / d_mass) if d_vel > 0 else 0
                 ay_drag = -(d["vy"] / d_vel) * (d_drag_mag / d_mass) if d_vel > 0 else 0
                 

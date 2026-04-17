@@ -21,8 +21,13 @@ class Stage:
             
         if self.fuel_system.empty:
             return 0.0
+
+        if current_thrust_power <= 0.0:
+            return 0.0
             
-        fuel_to_consume = self.burn_rate * dt
+        ref = max(self.thrust_vac, self.thrust_sl, 1.0)
+        thrust_frac = max(0.0, min(1.25, current_thrust_power / ref))
+        fuel_to_consume = self.burn_rate * thrust_frac * dt
         self.fuel_system.consume(fuel_to_consume)
         
         if self.fuel_system.empty:

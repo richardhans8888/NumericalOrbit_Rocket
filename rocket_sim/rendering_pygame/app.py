@@ -297,7 +297,7 @@ def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
     return surf
 
 
-def render_satellite_sprite(bus_w_px, bus_h_px):
+def render_satellite_sprite(bus_w_px, bus_h_px, panel_frac=1.0):
     bus_w_px = max(10, int(bus_w_px))
     bus_h_px = max(8, int(bus_h_px))
     pad = max(10, int(bus_w_px * 0.9))
@@ -317,7 +317,8 @@ def render_satellite_sprite(bus_w_px, bus_h_px):
     pygame.draw.circle(surf, (145, 145, 150, 140), (dish_cx, dish_cy), max(2, dish_r - 3), 0)
     pygame.draw.line(surf, (120, 120, 125, 180), (body.right - 1, dish_cy), (dish_cx - dish_r + 2, dish_cy), 2)
 
-    panel_w = max(14, int(bus_w_px * 1.25))
+    panel_frac = clamp(float(panel_frac), 0.0, 1.0)
+    panel_w = max(12, int(bus_w_px * (0.42 + 1.05 * panel_frac)))
     panel_h = max(6, int(bus_h_px * 0.85))
     gap = max(3, int(bus_w_px * 0.18))
     for sgn in (-1, 1):
@@ -440,6 +441,40 @@ def draw_particles(screen, fx_surf, particles, cam_x, cam_y, zoom):
             pygame.draw.circle(fx_surf, (255, 160, 40, a), (sx - VIEW_X, sy), rr)
             pygame.draw.circle(fx_surf, (255, 230, 190, int(a * 0.7)), (sx - VIEW_X, sy), max(1, rr // 2))
     screen.blit(fx_surf, (VIEW_X, 0))
+
+
+def draw_gravity_vector(surface, font_tiny, rocket, cam_x, cam_y, zoom):
+    rx, ry = rocket.x, rocket.y
+    r = math.hypot(rx, ry)
+    if r <= 0:
+        return
+    mu = G * EARTH_MASS
+    g = mu / (r * r)
+    gx = -mu * rx / (r ** 3)
+    gy = -mu * ry / (r ** 3)
+
+    sx, sy = world_to_screen(rx, ry, cam_x, cam_y, zoom)
+    if not (VIEW_X - 80 <= sx <= WIDTH + 80 and -80 <= sy <= VIEW_H + 80):
+        return
+
+    strength = (g / 9.81) ** 0.35
+    arrow_len = int(clamp(18 + 26 * strength, 12, 55))
+    amag = math.hypot(gx, gy)
+    if amag <= 0:
+        return
+    ux = gx / amag
+    uy = gy / amag
+    ex = sx + int(ux * arrow_len)
+    ey = sy - int(uy * arrow_len)
+
+    col = (210, 80, 240)
+    pygame.draw.line(surface, col, (sx, sy), (ex, ey), 2)
+    hx = ex - int(ux * 7)
+    hy = ey + int(uy * 7)
+    left = (hx + int(-uy * 5), hy - int(ux * 5))
+    right = (hx + int(uy * 5), hy - int(-ux * 5))
+    pygame.draw.polygon(surface, col, [(ex, ey), left, right])
+    surface.blit(font_tiny.render(f"g={g:.3f} m/s²", True, col), (sx + 6, sy + 6))
 
 
 def world_to_screen(wx, wy, cam_x, cam_y, zoom):
@@ -875,7 +910,7 @@ def draw_clouds_simple(surface, cam_x, cam_y, zoom, cloud_data):
                                 (sx - pw // 2, sy - ph // 2, pw, ph))
 
 
-def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase):
+def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase, deploy_state=None):
     rx, ry = rocket.x, rocket.y
     pitch = rocket.pitch_angle
     stage = rocket.current_stage_index
@@ -890,18 +925,61 @@ def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase):
             cache = {}
             setattr(draw_rocket, "_sat_cache", cache)
 
-        bus_w_px = max(10, int(3.6 * zoom))
-        bus_h_px = max(8, int(2.6 * zoom))
-        key = (bus_w_px, bus_h_px)
-        spr = cache.get(key)
-        if spr is None:
-            spr = render_satellite_sprite(bus_w_px, bus_h_px)
-            cache[key] = spr
-
         vmag = math.hypot(rocket.vx, rocket.vy)
         ang = math.atan2(rocket.vy, rocket.vx) if vmag > 0.1 else pitch
-        rot_deg = math.degrees(ang)
-        rot = pygame.transform.rotate(spr, -rot_deg)
+        vhat_x = math.cos(ang)
+        vhat_y = math.sin(ang)
+        n_x = -vhat_y
+        n_y = vhat_x
+
+        if deploy_state and deploy_state.get("active"):
+            t = float(deploy_state.get("t", 0.0))
+            frac = clamp(t / 2.2, 0.0, 1.0)
+            panel_frac = clamp((t - 0.35) / 1.15, 0.0, 1.0)
+
+            stage_back = (3.0 + 18.0 * frac)
+            sat_out = (1.0 + 10.0 * frac)
+            stage_x = rx - vhat_x * stage_back
+            stage_y = ry - vhat_y * stage_back
+            sat_x = rx + n_x * sat_out
+            sat_y = ry + n_y * sat_out
+
+            stage_sx, stage_sy = world_to_screen(stage_x, stage_y, cam_x, cam_y, zoom)
+            sat_sx, sat_sy = world_to_screen(sat_x, sat_y, cam_x, cam_y, zoom)
+
+            core_h_px = max(18, int(40.0 * zoom))
+            core_w_px = max(6, int(8.4 * zoom))
+            rkey = (core_h_px, core_w_px, max(stage, 1), False)
+            rspr = cache.get(("r",) + rkey)
+            if rspr is None:
+                rspr = render_rocket_sprite(core_h_px, core_w_px, max(stage, 1), False)
+                cache[("r",) + rkey] = rspr
+            rrot = pygame.transform.rotate(rspr, math.degrees(pitch - math.pi / 2.0))
+            rr = rrot.get_rect(center=(stage_sx, stage_sy))
+            rrot.set_alpha(int(220 * (1.0 - frac)))
+            surface.blit(rrot, rr.topleft)
+
+            bus_w_px = max(10, int(3.6 * zoom))
+            bus_h_px = max(8, int(2.6 * zoom))
+            skey = (bus_w_px, bus_h_px, int(panel_frac * 12))
+            spr = cache.get(skey)
+            if spr is None:
+                spr = render_satellite_sprite(bus_w_px, bus_h_px, panel_frac=panel_frac)
+                cache[skey] = spr
+            srot = pygame.transform.rotate(spr, -math.degrees(ang))
+            sr = srot.get_rect(center=(sat_sx, sat_sy))
+            surface.blit(srot, sr.topleft)
+            return
+
+        bus_w_px = max(10, int(3.6 * zoom))
+        bus_h_px = max(8, int(2.6 * zoom))
+        key = (bus_w_px, bus_h_px, 12)
+        spr = cache.get(key)
+        if spr is None:
+            spr = render_satellite_sprite(bus_w_px, bus_h_px, panel_frac=1.0)
+            cache[key] = spr
+
+        rot = pygame.transform.rotate(spr, -math.degrees(ang))
         rect = rot.get_rect(center=(base_sx, base_sy))
 
         glint = pygame.Surface((rot.get_width(), rot.get_height()), pygame.SRCALPHA)
@@ -957,12 +1035,42 @@ def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase):
     surface.blit(rot, rect.topleft)
 
 
-def draw_debris(surface, debris, cam_x, cam_y, zoom):
+def draw_debris(surface, debris, cam_x, cam_y, zoom, dt_real):
     for d in debris:
+        d["age"] = d.get("age", 0.0) + dt_real
+        if "rot" not in d:
+            d["rot"] = random.uniform(0, 360)
+            d["omega"] = random.uniform(-130, 130)
+        d["rot"] = (d["rot"] + d["omega"] * dt_real) % 360
+
         sx, sy = world_to_screen(d["x"], d["y"], cam_x, cam_y, zoom)
-        size = max(2, int(5 * zoom))
         if VIEW_X < sx < WIDTH and 0 < sy < VIEW_H:
-            pygame.draw.rect(surface, C_ORANGE, (sx - size, sy - size, size * 2, size))
+            if d.get("kind") == "fairing":
+                w_m, h_m = 3.2, 12.0
+                col = (220, 222, 226)
+            else:
+                dm = d.get("stage").dry_mass if d.get("stage") else 2000.0
+                if dm > 15000:
+                    w_m, h_m = 6.2, 34.0
+                elif dm > 3000:
+                    w_m, h_m = 4.6, 22.0
+                else:
+                    w_m, h_m = 3.8, 16.0
+                col = (235, 150, 40)
+
+            w_px = max(3, int(w_m * zoom))
+            h_px = max(4, int(h_m * zoom))
+            if w_px < 3 or h_px < 4:
+                pygame.draw.circle(surface, col, (sx, sy), 2)
+                continue
+
+            base = pygame.Surface((w_px, h_px), pygame.SRCALPHA)
+            cylinder_fill(base, pygame.Rect(0, 0, w_px, h_px), col, edge_color=scale_color(col, 0.55), highlight=True)
+            fade = clamp(1.0 - d.get("age", 0.0) / 18.0, 0.0, 1.0)
+            base.set_alpha(int(220 * fade))
+            rot = pygame.transform.rotate(base, d["rot"])
+            rct = rot.get_rect(center=(sx, sy))
+            surface.blit(rot, rct.topleft)
 
 
 # ── Left Sidebar ─────────────────────────────────────────
@@ -1002,35 +1110,51 @@ def draw_sidebar(surface, font, font_sm, font_tiny, rocket, world,
     y += 8
 
     # Gravity box
-    pygame.draw.rect(surface, (18, 24, 38), (x, y, SIDE_W - 16, 108))
-    pygame.draw.rect(surface, C_DASH_LINE, (x, y, SIDE_W - 16, 108), 1)
+    box_h = 138
+    pygame.draw.rect(surface, (18, 24, 38), (x, y, SIDE_W - 16, box_h))
+    pygame.draw.rect(surface, C_DASH_LINE, (x, y, SIDE_W - 16, box_h), 1)
     surface.blit(font_sm.render("GRAVITY DATA", True, C_CYAN), (x + 4, y + 3)); y += 18
     alt = rocket.get_altitude()
-    r   = EARTH_RADIUS + alt
-    g_acc  = G * EARTH_MASS / (r * r) if r > 0 else 9.81
+    rx, ry = rocket.x, rocket.y
+    r   = math.hypot(rx, ry)
+    mu = G * EARTH_MASS
+    g_acc  = mu / (r * r) if r > 0 else 9.81
+    ax_g = -mu * rx / (r ** 3) if r > 0 else 0.0
+    ay_g = -mu * ry / (r ** 3) if r > 0 else 0.0
+    surface.blit(font_tiny.render(f"μ=GM: {mu/1e14:.3f}e14", True, C_TEXT), (x + 4, y)); y += 13
+    surface.blit(font_tiny.render(f"r=√(x²+y²): {r/1000:.1f} km", True, C_TEXT), (x + 4, y)); y += 13
+    surface.blit(font_tiny.render("g=μ/r²", True, (120, 130, 150)), (x + 4, y)); y += 13
     surface.blit(font_tiny.render(f"g: {g_acc:.4f} m/s²", True, C_TEXT), (x + 4, y)); y += 13
     surface.blit(font_tiny.render(f"g/g₀: {g_acc / 9.81:.4f}", True, C_TEXT), (x + 4, y)); y += 13
     wt = rocket.get_total_mass() * g_acc
     surface.blit(font_tiny.render(f"Wt: {wt / 1000:.1f} kN", True, C_TEXT), (x + 4, y)); y += 13
-    v_esc = math.sqrt(2 * G * EARTH_MASS / r) if r > 0 else 0
+    surface.blit(font_tiny.render("a⃗=-μ r⃗/r³", True, (120, 130, 150)), (x + 4, y)); y += 13
+    surface.blit(font_tiny.render(f"a=({ax_g:.3e},{ay_g:.3e})", True, C_TEXT), (x + 4, y)); y += 13
+    v_esc = math.sqrt(2 * mu / r) if r > 0 else 0
     surface.blit(font_tiny.render(f"V_esc: {v_esc:.0f} m/s", True, C_TEXT), (x + 4, y)); y += 13
-    v_orb = math.sqrt(G * EARTH_MASS / r) if r > 0 else 0
-    surface.blit(font_tiny.render(f"V_orb: {v_orb:.0f} m/s", True, C_TEXT), (x + 4, y)); y += 22
+    v_orb = math.sqrt(mu / r) if r > 0 else 0
+    surface.blit(font_tiny.render(f"V_orb≈√(μ/r): {v_orb:.0f}", True, C_TEXT), (x + 4, y)); y += 22
 
     # Orbital mechanics box
-    pygame.draw.rect(surface, (18, 24, 38), (x, y, SIDE_W - 16, 98))
-    pygame.draw.rect(surface, C_DASH_LINE, (x, y, SIDE_W - 16, 98), 1)
+    box2_h = 124
+    pygame.draw.rect(surface, (18, 24, 38), (x, y, SIDE_W - 16, box2_h))
+    pygame.draw.rect(surface, C_DASH_LINE, (x, y, SIDE_W - 16, box2_h), 1)
     surface.blit(font_sm.render("ORBITAL MECH", True, C_MAGENTA), (x + 4, y + 3)); y += 18
     vel = rocket.get_velocity_mag()
-    soe = 0.5 * vel * vel - G * EARTH_MASS / r if r > 0 else 0
-    surface.blit(font_tiny.render(f"E_sp: {soe/1e6:.2f} MJ/kg", True, C_TEXT), (x + 4, y)); y += 13
-    a   = -G * EARTH_MASS / (2 * soe) if soe != 0 else r
+    soe = 0.5 * vel * vel - mu / r if r > 0 else 0
+    surface.blit(font_tiny.render("ε=v²/2-μ/r", True, (120, 130, 150)), (x + 4, y)); y += 13
+    surface.blit(font_tiny.render(f"ε: {soe/1e6:.3f} MJ/kg", True, C_TEXT), (x + 4, y)); y += 13
+    a   = -mu / (2 * soe) if soe != 0 else r
     peri_alt = (r - EARTH_RADIUS) / 1000.0
     apo_alt  = max(0, (a * 2 - r - EARTH_RADIUS) / 1000.0) if a > 0 else 0
     surface.blit(font_tiny.render(f"Apo:  {apo_alt:.0f} km", True, C_TEXT), (x + 4, y)); y += 13
     surface.blit(font_tiny.render(f"Peri: {peri_alt:.0f} km", True, C_TEXT), (x + 4, y)); y += 13
+    h = rocket.x * rocket.vy - rocket.y * rocket.vx
+    e = math.sqrt(max(0.0, 1.0 + (2.0 * soe * (h * h)) / (mu * mu))) if mu > 0 else 0.0
+    surface.blit(font_tiny.render(f"h=xvy-yvx: {h/1e9:.2f}e9", True, C_TEXT), (x + 4, y)); y += 13
+    surface.blit(font_tiny.render(f"e: {e:.4f}", True, C_TEXT), (x + 4, y)); y += 13
     if a > 0:
-        period = 2 * math.pi * math.sqrt(a ** 3 / (G * EARTH_MASS))
+        period = 2 * math.pi * math.sqrt(a ** 3 / mu)
         surface.blit(font_tiny.render(f"T: {period/60:.0f} min", True, C_TEXT), (x + 4, y))
     else:
         surface.blit(font_tiny.render("T: N/A", True, C_TEXT), (x + 4, y))
@@ -1238,6 +1362,9 @@ def run_app():
     running = True
 
     vehicle_name = VEHICLES[vid]["name"]
+    prev_phase = world.phase
+    deploy_state = {"active": False, "t": 0.0}
+    prev_debris_len = 0
 
     while running:
         dt = clock.tick(FPS) / 1000.0
@@ -1290,9 +1417,36 @@ def run_app():
         rocket = world.rocket
         alt    = rocket.get_altitude()
         vel    = rocket.get_velocity_mag()
+
+        if prev_phase != world.phase:
+            if world.phase == FlightPhase.SECO:
+                deploy_state = {"active": True, "t": 0.0}
+            prev_phase = world.phase
+        if deploy_state.get("active"):
+            deploy_state["t"] = deploy_state.get("t", 0.0) + dt
+            if deploy_state["t"] >= 2.2:
+                deploy_state["active"] = False
+
+        if len(world.debris) > prev_debris_len:
+            for d in world.debris[prev_debris_len:]:
+                for _ in range(18):
+                    particles.append(
+                        {
+                            "x": d["x"] + random.uniform(-1.0, 1.0),
+                            "y": d["y"] + random.uniform(-1.0, 1.0),
+                            "vx": d["vx"] + random.uniform(-18, 18),
+                            "vy": d["vy"] + random.uniform(-18, 18),
+                            "life": random.uniform(0.5, 1.1),
+                            "ttl": random.uniform(0.5, 1.1),
+                            "r": random.uniform(1.6, 3.8),
+                            "kind": "smoke",
+                        }
+                    )
+            prev_debris_len = len(world.debris)
         is_active = (
             rocket.current_stage_index < len(rocket.stages)
             and rocket.stages[rocket.current_stage_index].active
+            and world.phase != FlightPhase.PRELAUNCH
             and world.phase != FlightPhase.PRELAUNCH
             and world.phase != FlightPhase.SECO
         )
@@ -1339,8 +1493,7 @@ def run_app():
             graphs["maxq"].push(q / 1000.0)
             graphs["gforce"].push(gf)
             stg = rocket.current_stage_index
-            tkn = (rocket.stages[stg].thrust_sl / 1000.0
-                   if stg < len(rocket.stages) and rocket.stages[stg].active else 0)
+            tkn = (world.last_thrust_n / 1000.0) if hasattr(world, "last_thrust_n") else 0.0
             graphs["thrust"].push(tkn)
             if stg < len(rocket.stages):
                 fs = rocket.stages[stg].fuel_system
@@ -1363,9 +1516,10 @@ def run_app():
             draw_ground_and_pad(screen, cam_x, cam_y, zoom)
             draw_clouds_simple(screen, cam_x, cam_y, zoom, clouds)
 
-        draw_debris(screen, world.debris, cam_x, cam_y, zoom)
+        draw_debris(screen, world.debris, cam_x, cam_y, zoom, dt)
         draw_particles(screen, fx_surf, particles, cam_x, cam_y, zoom)
-        draw_rocket(screen, rocket, cam_x, cam_y, zoom, world.phase)
+        draw_rocket(screen, rocket, cam_x, cam_y, zoom, world.phase, deploy_state=deploy_state)
+        draw_gravity_vector(screen, font_tiny, rocket, cam_x, cam_y, zoom)
 
         draw_sidebar(screen, font, font_sm, font_tiny, rocket, world,
                      manual_throttle, manual_pitch, cam_mode, vehicle_name)
