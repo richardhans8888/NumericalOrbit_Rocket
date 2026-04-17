@@ -74,6 +74,336 @@ def lerp_color(c1, c2, t):
     return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
 
 
+def clamp(v, lo, hi):
+    return lo if v < lo else hi if v > hi else v
+
+
+def scale_color(c, f):
+    return (
+        int(clamp(c[0] * f, 0, 255)),
+        int(clamp(c[1] * f, 0, 255)),
+        int(clamp(c[2] * f, 0, 255)),
+    )
+
+
+def build_ground_texture(w=768, h=384):
+    surf = pygame.Surface((w, h))
+    random.seed(20260417)
+    for y in range(h):
+        t = y / max(1, h - 1)
+        base = lerp_color(C_LAND3, C_GROUND, 0.12 + 0.78 * t)
+        pygame.draw.line(surf, base, (0, y), (w, y))
+    for _ in range(int(w * h * 0.0028)):
+        x = random.randrange(w)
+        y = random.randrange(h)
+        r = random.randint(1, 3)
+        col = random.choice(
+            [
+                scale_color(C_GROUND, 0.85),
+                scale_color(C_GROUND, 0.72),
+                scale_color(C_LAND2, 0.78),
+                (95, 85, 60),
+                (70, 65, 48),
+            ]
+        )
+        pygame.draw.circle(surf, col, (x, y), r)
+    for _ in range(140):
+        x0 = random.randrange(w)
+        y0 = random.randrange(h)
+        x1 = x0 + random.randint(-80, 80)
+        y1 = y0 + random.randint(-25, 25)
+        col = random.choice([(58, 120, 44), (62, 135, 48), (70, 150, 55)])
+        pygame.draw.aaline(surf, col, (x0, y0), (x1, y1))
+    return surf
+
+
+def build_pad_texture(w=512, h=256):
+    surf = pygame.Surface((w, h))
+    random.seed(20260418)
+    base0 = (105, 106, 110)
+    base1 = (135, 135, 140)
+    for y in range(h):
+        t = y / max(1, h - 1)
+        col = lerp_color(base0, base1, 0.15 + 0.7 * t)
+        pygame.draw.line(surf, col, (0, y), (w, y))
+    for _ in range(int(w * h * 0.002)):
+        x = random.randrange(w)
+        y = random.randrange(h)
+        r = random.randint(1, 2)
+        col = random.choice([(85, 85, 90), (120, 120, 126), (70, 70, 74)])
+        pygame.draw.circle(surf, col, (x, y), r)
+    for i in range(6):
+        yy = int((i + 1) * h / 7)
+        pygame.draw.line(surf, (160, 160, 165), (0, yy), (w, yy), 1)
+    for i in range(10):
+        xx = int((i + 1) * w / 11)
+        pygame.draw.line(surf, (95, 95, 100), (xx, 0), (xx, h), 1)
+    for x in range(40, w - 40, 56):
+        pygame.draw.rect(surf, (170, 170, 175), (x, 18, 12, h - 36), 2)
+    return surf
+
+
+def cylinder_fill(surf, rect, base_color, edge_color=None, highlight=True):
+    x, y, w, h = rect
+    if w <= 1 or h <= 1:
+        return
+    for ix in range(w):
+        nx = (ix / (w - 1)) * 2 - 1
+        shade = 0.62 + 0.38 * (1 - nx * nx)
+        col = scale_color(base_color, shade)
+        pygame.draw.line(surf, col, (x + ix, y), (x + ix, y + h - 1))
+    if highlight and w >= 6:
+        hx = x + int(w * 0.28)
+        pygame.draw.line(surf, (255, 255, 255, 70), (hx, y + 2), (hx, y + h - 3))
+        hx2 = x + int(w * 0.66)
+        pygame.draw.line(surf, (0, 0, 0, 35), (hx2, y + 2), (hx2, y + h - 3))
+    if edge_color is None:
+        edge_color = scale_color(base_color, 0.55)
+    pygame.draw.rect(surf, edge_color, rect, 1)
+
+
+def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
+    show_boosters = stage_index == 0
+    ppm = max(0.00001, core_w_px / 8.4)
+    total_w = core_w_px + (int(7.4 * ppm) if show_boosters else 0)
+    nose_h = max(14, int(9.0 * ppm))
+    bell_pad = max(10, int(5.5 * ppm))
+    total_h = core_h_px + nose_h + bell_pad + 6
+    surf = pygame.Surface((max(2, total_w), max(2, total_h)), pygame.SRCALPHA)
+
+    cx = surf.get_width() // 2
+    core_y = nose_h + 2
+    base_y = core_y + core_h_px
+
+    core_w = core_w_px
+    core_h = core_h_px
+    core_x = cx - core_w // 2
+    core_y = base_y - core_h
+
+    body_col = (235, 235, 234) if stage_index >= 1 else (232, 118, 28)
+    cylinder_fill(surf, pygame.Rect(core_x, core_y, core_w, core_h), body_col)
+
+    if stage_index <= 1:
+        ring_h = max(2, int(0.55 * ppm))
+        for ry in [
+            core_y + int(core_h * 0.18),
+            core_y + int(core_h * 0.52),
+            core_y + int(core_h * 0.78),
+        ]:
+            pygame.draw.rect(surf, (20, 20, 24, 40), (core_x, ry, core_w, ring_h))
+            pygame.draw.line(surf, (255, 255, 255, 60), (core_x + 1, ry), (core_x + core_w - 2, ry))
+
+    inter_h = max(4, int(2.0 * ppm))
+    pygame.draw.rect(surf, (245, 245, 245, 120), (core_x + 1, core_y + core_h - inter_h, core_w - 2, inter_h))
+    pygame.draw.rect(surf, (0, 0, 0, 55), (core_x + 1, core_y + core_h - 1, core_w - 2, 1))
+
+    fin_h = max(5, int(3.0 * ppm))
+    fin_w = max(4, int(2.0 * ppm))
+    fin_col = (210, 210, 212)
+    pygame.draw.polygon(
+        surf,
+        (*fin_col, 210),
+        [(core_x, base_y), (core_x - fin_w, base_y - fin_h), (core_x, base_y - fin_h // 2)],
+    )
+    pygame.draw.polygon(
+        surf,
+        (*fin_col, 210),
+        [(core_x + core_w, base_y), (core_x + core_w + fin_w, base_y - fin_h), (core_x + core_w, base_y - fin_h // 2)],
+    )
+
+    noz_y = base_y + 1
+    if stage_index == 0:
+        n_cnt = 3
+        bell_w = max(5, int(1.8 * ppm))
+        bell_h = max(6, int(2.6 * ppm))
+    else:
+        n_cnt = 1
+        bell_w = max(5, int(2.2 * ppm))
+        bell_h = max(7, int(3.0 * ppm))
+    if core_w >= 10:
+        for i in range(n_cnt):
+            t = (i + 1) / (n_cnt + 1)
+            bx = core_x + int(t * core_w) - bell_w // 2
+            pygame.draw.polygon(
+                surf,
+                (40, 40, 45, 220),
+                [(bx, base_y), (bx + bell_w, base_y), (bx + int(bell_w * 0.7), noz_y + bell_h), (bx + int(bell_w * 0.3), noz_y + bell_h)],
+            )
+            pygame.draw.polygon(
+                surf,
+                (0, 0, 0, 55),
+                [(bx, base_y), (bx + bell_w, base_y), (bx + int(bell_w * 0.7), noz_y + bell_h), (bx + int(bell_w * 0.3), noz_y + bell_h)],
+                1,
+            )
+
+    nose_w = int(core_w * (1.05 if fairing_attached else 0.92))
+    nx = cx - nose_w // 2
+    ny = core_y - nose_h + 2
+    if fairing_attached:
+        cylinder_fill(surf, pygame.Rect(nx, ny + int(nose_h * 0.25), nose_w, int(nose_h * 0.75)), (240, 240, 242))
+        pygame.draw.polygon(
+            surf,
+            (240, 240, 242, 255),
+            [(nx, ny + int(nose_h * 0.28)), (nx + nose_w, ny + int(nose_h * 0.28)), (cx, ny)],
+        )
+        pygame.draw.polygon(
+            surf,
+            (0, 0, 0, 50),
+            [(nx, ny + int(nose_h * 0.28)), (nx + nose_w, ny + int(nose_h * 0.28)), (cx, ny)],
+            1,
+        )
+    else:
+        pygame.draw.polygon(
+            surf,
+            (235, 235, 236, 255),
+            [(core_x, core_y + 2), (core_x + core_w, core_y + 2), (cx, ny)],
+        )
+        pygame.draw.polygon(
+            surf,
+            (0, 0, 0, 45),
+            [(core_x, core_y + 2), (core_x + core_w, core_y + 2), (cx, ny)],
+            1,
+        )
+
+    if show_boosters:
+        b_w = max(6, int(3.6 * ppm))
+        b_h = max(10, int(30.0 * ppm))
+        off = int(5.7 * ppm)
+        for sgn in (-1, 1):
+            bx = cx + sgn * off - b_w // 2
+            by = base_y - b_h
+            cylinder_fill(surf, pygame.Rect(bx, by, b_w, b_h), (238, 238, 236))
+            pygame.draw.polygon(
+                surf,
+                (238, 238, 236, 255),
+                [(bx, by + 2), (bx + b_w, by + 2), (bx + b_w // 2, by - max(6, int(3.2 * ppm)))],
+            )
+            pygame.draw.polygon(
+                surf,
+                (55, 55, 60, 220),
+                [(bx + int(b_w * 0.2), base_y), (bx + int(b_w * 0.8), base_y), (bx + int(b_w * 0.65), base_y + max(5, int(2.2 * ppm))), (bx + int(b_w * 0.35), base_y + max(5, int(2.2 * ppm)))],
+            )
+
+    if core_w >= 16:
+        flag_w = int(core_w * 0.45)
+        flag_h = max(6, int(core_h * 0.06))
+        fx = core_x + int(core_w * 0.30) - flag_w // 2
+        fy = core_y + int(core_h * 0.35)
+        pygame.draw.rect(surf, (20, 20, 25, 120), (fx - 2, fy - 2, flag_w + 4, flag_h + 4), border_radius=3)
+        pygame.draw.rect(surf, (230, 230, 232, 210), (fx, fy, flag_w, flag_h), border_radius=2)
+        pygame.draw.line(surf, (200, 60, 60, 240), (fx + 1, fy + 1), (fx + flag_w - 2, fy + 1), 2)
+        pygame.draw.line(surf, (40, 90, 200, 240), (fx + 1, fy + flag_h - 2), (fx + flag_w - 2, fy + flag_h - 2), 2)
+
+    return surf
+
+
+def spawn_exhaust(particles, rocket, manual_throttle, dt, intensity=1.0):
+    if manual_throttle <= 0:
+        return
+    alt = rocket.get_altitude()
+    pitch = rocket.pitch_angle
+    ux = math.cos(pitch)
+    uy = math.sin(pitch)
+    ex = -ux
+    ey = -uy
+    px = -uy
+    py = ux
+
+    base_x = rocket.x - ux * 1.8
+    base_y = rocket.y - uy * 1.8
+    vac = 1.0 + min(alt / 40000.0, 3.0)
+    rate = (90.0 if alt < 2000 else 45.0) * manual_throttle * intensity
+    n = int(rate * dt)
+    for _ in range(n):
+        spread = random.uniform(-1.2, 1.2) * (1.2 + 0.7 * vac)
+        ox = px * spread
+        oy = py * spread
+        speed = random.uniform(55, 115) * vac
+        vx = ex * speed + random.uniform(-8, 8)
+        vy = ey * speed + random.uniform(-8, 8)
+        life = random.uniform(0.15, 0.35) * vac
+        r0 = random.uniform(0.8, 1.8) * (1.0 + 0.5 * vac)
+        particles.append(
+            {
+                "x": base_x + ox,
+                "y": base_y + oy,
+                "vx": vx,
+                "vy": vy,
+                "life": life,
+                "ttl": life,
+                "r": r0,
+                "kind": "flame",
+            }
+        )
+
+    if alt < 6000:
+        s_rate = (110.0 if alt < 250 else 55.0) * manual_throttle * intensity
+        sn = int(s_rate * dt)
+        for _ in range(sn):
+            spread = random.uniform(-3.2, 3.2) * (1.0 + (6000 - alt) / 6000.0)
+            ox = px * spread
+            oy = py * spread
+            speed = random.uniform(10, 38) + random.uniform(0, 18) * (1.0 - min(alt / 6000.0, 1.0))
+            vx = ex * speed * 0.6 + random.uniform(-8, 8)
+            vy = ey * speed * 0.35 + random.uniform(-6, 6)
+            life = random.uniform(1.2, 2.6)
+            r0 = random.uniform(1.8, 4.2) * (1.0 + (800 - min(alt, 800)) / 800.0)
+            particles.append(
+                {
+                    "x": base_x + ox,
+                    "y": base_y + oy,
+                    "vx": vx,
+                    "vy": vy,
+                    "life": life,
+                    "ttl": life,
+                    "r": r0,
+                    "kind": "smoke",
+                }
+            )
+
+
+def update_particles(particles, dt):
+    for i in range(len(particles) - 1, -1, -1):
+        p = particles[i]
+        p["life"] -= dt
+        if p["life"] <= 0:
+            particles.pop(i)
+            continue
+        if p["kind"] == "smoke":
+            p["vx"] *= 0.985
+            p["vy"] *= 0.985
+            p["vy"] += 7.0 * dt
+            p["r"] += 8.0 * dt
+        else:
+            p["vx"] *= 0.97
+            p["vy"] *= 0.97
+            p["r"] += 3.2 * dt
+        p["x"] += p["vx"] * dt
+        p["y"] += p["vy"] * dt
+
+
+def draw_particles(screen, fx_surf, particles, cam_x, cam_y, zoom):
+    fx_surf.fill((0, 0, 0, 0))
+    for p in particles:
+        sx, sy = world_to_screen(p["x"], p["y"], cam_x, cam_y, zoom)
+        if not (VIEW_X - 60 <= sx <= WIDTH + 60 and -60 <= sy <= VIEW_H + 60):
+            continue
+        t = p["life"] / max(p["ttl"], 0.0001)
+        if p["kind"] == "smoke":
+            a = int(170 * clamp(t, 0, 1))
+            col = (90, 92, 98, a)
+            rr = max(2, int(p["r"] * zoom))
+            pygame.draw.circle(fx_surf, col, (sx - VIEW_X, sy), rr)
+            if rr > 6:
+                pygame.draw.circle(fx_surf, (60, 62, 68, int(a * 0.45)), (sx - VIEW_X + rr // 4, sy + rr // 6), max(1, rr // 2), 0)
+        else:
+            a = int(190 * clamp(t, 0, 1))
+            rr = max(2, int(p["r"] * zoom))
+            pygame.draw.circle(fx_surf, (255, 160, 40, a), (sx - VIEW_X, sy), rr)
+            pygame.draw.circle(fx_surf, (255, 230, 190, int(a * 0.7)), (sx - VIEW_X, sy), max(1, rr // 2))
+    screen.blit(fx_surf, (VIEW_X, 0))
+
+
 def world_to_screen(wx, wy, cam_x, cam_y, zoom):
     sx = VIEW_X + VIEW_W // 2 + (wx - cam_x) * zoom
     sy = VIEW_H // 2 - (wy - cam_y) * zoom
@@ -419,8 +749,23 @@ def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
     _, gy = world_to_screen(-50000, EARTH_RADIUS, cam_x, cam_y, zoom)
     gh = VIEW_H - gy
     if gh > 0 and gy < VIEW_H:
-        pygame.draw.rect(surface, C_GROUND, (VIEW_X, gy, VIEW_W, gh + 10))
+        if "GROUND_TEX" in globals() and globals().get("GROUND_TEX") is not None:
+            tex = globals()["GROUND_TEX"]
+            tw, th = tex.get_width(), tex.get_height()
+            off = int((cam_x * zoom * 0.22) % tw)
+            start_x = VIEW_X - off - tw
+            start_y = max(gy, 0)
+            for yy in range(start_y, VIEW_H, th):
+                for xx in range(start_x, WIDTH, tw):
+                    surface.blit(tex, (xx, yy))
+        else:
+            pygame.draw.rect(surface, C_GROUND, (VIEW_X, gy, VIEW_W, gh + 10))
         pygame.draw.rect(surface, C_GROUND_DK, (VIEW_X, gy, VIEW_W, max(2, int(3 * zoom))))
+        haze = pygame.Surface((VIEW_W, 60), pygame.SRCALPHA)
+        for i in range(60):
+            a = int(90 * (1 - i / 60.0))
+            pygame.draw.line(haze, (200, 215, 230, a), (0, i), (VIEW_W, i))
+        surface.blit(haze, (VIEW_X, gy - 38))
 
     def ws(wx, wy):
         return world_to_screen(wx, wy + EARTH_RADIUS, cam_x, cam_y, zoom)
@@ -428,7 +773,17 @@ def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
     p1 = ws(-25, 0); p2 = ws(25, 4)
     pw = p2[0] - p1[0]; ph = p1[1] - p2[1]
     if pw > 2:
-        pygame.draw.rect(surface, C_PAD, (p1[0], p2[1], pw, ph))
+        pad_rect = pygame.Rect(p1[0], p2[1], pw, ph)
+        if "PAD_TEX" in globals() and globals().get("PAD_TEX") is not None:
+            s = pygame.transform.smoothscale(globals()["PAD_TEX"], (max(2, pad_rect.w), max(2, pad_rect.h)))
+            surface.blit(s, pad_rect.topleft)
+            pygame.draw.rect(surface, (35, 35, 38), pad_rect, 2)
+        else:
+            pygame.draw.rect(surface, C_PAD, pad_rect)
+        trench = pygame.Surface((pad_rect.w, pad_rect.h), pygame.SRCALPHA)
+        pygame.draw.ellipse(trench, (15, 15, 18, 170), (pad_rect.w * 0.40, pad_rect.h * 0.15, pad_rect.w * 0.20, pad_rect.h * 0.70))
+        pygame.draw.ellipse(trench, (0, 0, 0, 80), (pad_rect.w * 0.39, pad_rect.h * 0.12, pad_rect.w * 0.22, pad_rect.h * 0.76), 2)
+        surface.blit(trench, pad_rect.topleft)
     t1 = ws(-8, -3); t2 = ws(8, 0)
     tw = t2[0] - t1[0]; th = t1[1] - t2[1]
     if tw > 1:
@@ -439,13 +794,28 @@ def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
     v1 = ws(-260, 0); v2 = ws(-140, 80)
     vw = v2[0] - v1[0]; vh = v1[1] - v2[1]
     if vw > 3:
-        pygame.draw.rect(surface, C_VAB, (v1[0], v2[1], vw, vh))
-        pygame.draw.rect(surface, C_VAB_DOOR,
-                         (v1[0] + vw // 3, v2[1] + vh // 4, vw // 3, vh * 3 // 4))
+        vab_rect = pygame.Rect(v1[0], v2[1], vw, vh)
+        grad = pygame.Surface((vab_rect.w, vab_rect.h), pygame.SRCALPHA)
+        for yy in range(vab_rect.h):
+            t = yy / max(1, vab_rect.h - 1)
+            col = lerp_color((90, 95, 110), (120, 125, 140), 0.2 + 0.7 * t)
+            pygame.draw.line(grad, (*col, 255), (0, yy), (vab_rect.w, yy))
+        surface.blit(grad, vab_rect.topleft)
+        pygame.draw.rect(surface, (60, 65, 80), vab_rect, 2)
+        pygame.draw.rect(surface, C_VAB_DOOR, (v1[0] + vw // 3, v2[1] + vh // 4, vw // 3, vh * 3 // 4))
     tw1 = ws(10, 0); tw2 = ws(16, 70)
     tww = tw2[0] - tw1[0]; twh = tw1[1] - tw2[1]
     if tww > 1:
-        pygame.draw.rect(surface, C_TOWER, (tw1[0], tw2[1], tww, twh))
+        tower_rect = pygame.Rect(tw1[0], tw2[1], tww, twh)
+        tower_grad = pygame.Surface((tower_rect.w, tower_rect.h), pygame.SRCALPHA)
+        for yy in range(tower_rect.h):
+            t = yy / max(1, tower_rect.h - 1)
+            col = lerp_color((125, 118, 110), (175, 170, 160), 0.2 + 0.7 * t)
+            pygame.draw.line(tower_grad, (*col, 255), (0, yy), (tower_rect.w, yy))
+        surface.blit(tower_grad, tower_rect.topleft)
+        pygame.draw.rect(surface, (70, 65, 60), tower_rect, 2)
+        for yy in range(0, tower_rect.h, max(8, int(10 * zoom))):
+            pygame.draw.line(surface, (70, 65, 60), (tower_rect.x, tower_rect.y + yy), (tower_rect.right, tower_rect.y + yy), 1)
         for ay in [25, 40]:
             a1 = ws(6, ay); a2 = ws(16, ay + 3)
             aw = a2[0] - a1[0]
@@ -468,52 +838,58 @@ def draw_clouds_simple(surface, cam_x, cam_y, zoom, cloud_data):
 
 
 def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase):
-    alt = rocket.get_altitude()
     rx, ry = rocket.x, rocket.y
-    pitch  = rocket.pitch_angle
+    pitch = rocket.pitch_angle
+    stage = rocket.current_stage_index
+    base_sx, base_sy = world_to_screen(rx, ry, cam_x, cam_y, zoom)
 
-    def ro(dx, dy):
-        c = math.cos(pitch); s = math.sin(pitch)
-        return rx + dx * (-s) + dy * c, ry + dx * c + dy * s
+    if base_sy > VIEW_H + 200 or base_sx < VIEW_X - 300 or base_sx > WIDTH + 300:
+        return
 
-    def draw_part(dx, dy, w, h, color):
-        corners = [(-w/2, 0), (w/2, 0), (w/2, h), (-w/2, h)]
-        sc = [world_to_screen(*ro(dx + cx, dy + cy), cam_x, cam_y, zoom)
-              for cx, cy in corners]
-        pygame.draw.polygon(surface, color, sc)
-        pygame.draw.polygon(surface, tuple(max(0, c - 30) for c in color), sc, 1)
+    core_h_m = 64.0
+    if stage >= 2:
+        core_h_m = 40.0
 
-    def draw_tri(dx, dy, w, h, color):
-        pts = [(-w/2, 0), (w/2, 0), (0, h)]
-        sc  = [world_to_screen(*ro(dx + cx, dy + cy), cam_x, cam_y, zoom)
-               for cx, cy in pts]
-        pygame.draw.polygon(surface, color, sc)
+    core_h_px = int(core_h_m * zoom)
+    core_w_px = int(8.4 * zoom)
 
-    if rocket.current_stage_index == 0:
-        for side in [-5.5, 5.5]:
-            draw_part(side, 0,  3.6, 30, C_WHITE)
-            draw_tri(side,  30, 3.6,  4, C_WHITE)
-            draw_tri(side,  -3, 2.4, -3, C_NOZZLE)
-    if rocket.current_stage_index <= 1:
-        draw_part(0, 0,  8.4, 42, C_ORANGE)
-        for nx in [-2, 0, 2]:
-            draw_tri(nx, -2, 1.6, -2.5, C_NOZZLE)
-    draw_part(0, 42, 7,  8, C_WHITE)
-    draw_part(0, 50, 5,  5, C_WHITE)
-    draw_tri(0,  55, 5,  5, C_WHITE)
-    sb  = world_to_screen(*ro(0, 60), cam_x, cam_y, zoom)
-    st_ = world_to_screen(*ro(0, 64), cam_x, cam_y, zoom)
-    pygame.draw.line(surface, (150, 150, 150), sb, st_, max(1, int(0.3 * zoom)))
+    if core_h_px < 18 or core_w_px < 6:
+        pygame.draw.circle(surface, C_WHITE, (base_sx, base_sy), max(2, int(2 * zoom)))
+        return
 
-    is_active = (rocket.current_stage_index < len(rocket.stages)
-                 and rocket.stages[rocket.current_stage_index].active)
-    if is_active and phase != FlightPhase.PRELAUNCH:
-        vac = 1.0 + min(alt / 40000.0, 3.0)
-        fw = (8.0 if rocket.current_stage_index == 0 else 4.0) * vac
-        fl = random.uniform(15, 28) * vac
-        draw_tri(0, -3, fw * 1.2, -fl,        C_FLAME_OUT)
-        draw_tri(0, -3, fw * 0.7, -fl * 0.8,  C_FLAME_MID)
-        draw_tri(0, -3, fw * 0.3, -fl * 0.6,  C_FLAME_IN)
+    cache = getattr(draw_rocket, "_sprite_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(draw_rocket, "_sprite_cache", cache)
+
+    key = (core_h_px, core_w_px, stage, bool(rocket.fairing_attached))
+    spr = cache.get(key)
+    if spr is None:
+        spr = render_rocket_sprite(core_h_px, core_w_px, stage, rocket.fairing_attached)
+        cache[key] = spr
+
+    rot_deg = math.degrees(pitch - math.pi / 2.0)
+    rot = pygame.transform.rotate(spr, rot_deg)
+
+    ppm = max(0.00001, core_w_px / 8.4)
+    nose_h = max(14, int(9.0 * ppm))
+    base_y = nose_h + 2 + core_h_px
+    center_local = pygame.math.Vector2(spr.get_width() / 2.0, spr.get_height() / 2.0)
+    base_local = pygame.math.Vector2(spr.get_width() / 2.0, float(base_y))
+    off = base_local - center_local
+    off_rot = off.rotate(rot_deg)
+    center_pos = pygame.math.Vector2(base_sx, base_sy) - off_rot
+    rect = rot.get_rect(center=(int(center_pos.x), int(center_pos.y)))
+
+    if base_sy < VIEW_H:
+        sh = pygame.Surface((rot.get_width(), rot.get_height()), pygame.SRCALPHA)
+        sh.blit(rot, (0, 0))
+        sh.fill((0, 0, 0, 90), special_flags=pygame.BLEND_RGBA_MULT)
+        sx = rect.x + int(8 * zoom)
+        sy = rect.y + int(6 * zoom)
+        surface.blit(sh, (sx, sy))
+
+    surface.blit(rot, rect.topleft)
 
 
 def draw_debris(surface, debris, cam_x, cam_y, zoom):
@@ -745,6 +1121,12 @@ def run_app():
     font_tiny = pygame.font.SysFont("Menlo", 10)
 
     sky_cache = build_sky_cache()
+    global GROUND_TEX, PAD_TEX
+    GROUND_TEX = build_ground_texture()
+    PAD_TEX = build_pad_texture()
+
+    fx_surf = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
+    particles = []
 
     random.seed(42)
     clouds = [(random.uniform(-20000, 20000),
@@ -843,6 +1225,15 @@ def run_app():
         rocket = world.rocket
         alt    = rocket.get_altitude()
         vel    = rocket.get_velocity_mag()
+        is_active = (
+            rocket.current_stage_index < len(rocket.stages)
+            and rocket.stages[rocket.current_stage_index].active
+            and world.phase != FlightPhase.PRELAUNCH
+            and world.phase != FlightPhase.SECO
+        )
+        if is_active:
+            spawn_exhaust(particles, rocket, manual_throttle, dt, intensity=1.0)
+        update_particles(particles, dt)
 
         # ── Camera ────────────────────────────────────────
         if cam_mode == 0:
@@ -908,6 +1299,7 @@ def run_app():
             draw_clouds_simple(screen, cam_x, cam_y, zoom, clouds)
 
         draw_debris(screen, world.debris, cam_x, cam_y, zoom)
+        draw_particles(screen, fx_surf, particles, cam_x, cam_y, zoom)
         draw_rocket(screen, rocket, cam_x, cam_y, zoom, world.phase)
 
         draw_sidebar(screen, font, font_sm, font_tiny, rocket, world,
