@@ -3,7 +3,7 @@ import math
 from physics.constants import EARTH_RADIUS
 from physics.gravity import compute_gravity_vector
 from physics.drag import compute_drag_force
-from physics.integrator import update_velocity, update_position
+from physics.integrator import update_velocity, update_position, rk4_step_state
 from rocket.rocket import Rocket
 from mission.flight_phases import FlightPhase
 from simulation.events import EVENT_STAGE_SEPARATION, EVENT_ENGINE_CUTOFF
@@ -18,6 +18,7 @@ class World:
         
         self.phase = FlightPhase.PRELAUNCH
         self.time_warp = 1.0
+        self._entered_seco = False
         
     def start(self):
         self.phase = FlightPhase.LIFTOFF
@@ -117,35 +118,45 @@ class World:
             self.phase = FlightPhase.SECO
             if self.rocket.current_stage_index < len(self.rocket.stages):
                 self.rocket.stages[self.rocket.current_stage_index].active = False
+            self._entered_seco = True
                 
         # 2. Physics integration
         rocket_mass = self.rocket.get_total_mass()
         if rocket_mass > 0:
-            gx, gy = compute_gravity_vector(self.rocket.x, self.rocket.y)
-            
             if self.phase == FlightPhase.SECO:
-                fx, fy = 0.0, 0.0
-            else:
-                fx, fy = self.rocket.get_thrust_force(thrust_mag)
-                
-            ax_thrust = fx / rocket_mass
-            ay_thrust = fy / rocket_mass
-            
-            drag_mag = compute_drag_force(vel, alt, self.rocket.drag_coefficient, self.rocket.cross_sectional_area)
-            ax_drag, ay_drag = 0.0, 0.0
-            if vel > 0.0:
-                ax_drag = -(self.rocket.vx / vel) * (drag_mag / rocket_mass)
-                ay_drag = -(self.rocket.vy / vel) * (drag_mag / rocket_mass)
+                def deriv(y):
+                    x, y_, vx, vy = y
+                    gax, gay = compute_gravity_vector(x, y_)
+                    r = math.sqrt(x * x + y_ * y_)
+                    alt_ = r - EARTH_RADIUS
+                    vmag = math.sqrt(vx * vx + vy * vy)
+                    dmag = compute_drag_force(vmag, alt_, self.rocket.drag_coefficient, self.rocket.cross_sectional_area)
+                    dax, day = 0.0, 0.0
+                    if vmag > 0:
+                        dax = -(vx / vmag) * (dmag / rocket_mass)
+                        day = -(vy / vmag) * (dmag / rocket_mass)
+                    ax = gax + dax
+                    ay = gay + day
+                    return [vx, vy, ax, ay]
 
-            ax = gx + ax_thrust + ax_drag
-            ay = gy + ay_thrust + ay_drag
-            
-            if alt <= 0.0 and self.phase == FlightPhase.PRELAUNCH:
-                ax, ay = 0.0, 0.0
-                self.rocket.vx, self.rocket.vy = 0.0, 0.0
-                     
-            self.rocket.vx, self.rocket.vy = update_velocity(self.rocket.vx, self.rocket.vy, ax, ay, dt)
-            self.rocket.x, self.rocket.y = update_position(self.rocket.x, self.rocket.y, self.rocket.vx, self.rocket.vy, dt)
+                s0 = [self.rocket.x, self.rocket.y, self.rocket.vx, self.rocket.vy]
+                s1 = rk4_step_state(s0, dt, deriv)
+                self.rocket.x, self.rocket.y, self.rocket.vx, self.rocket.vy = s1
+            else:
+                gx, gy = compute_gravity_vector(self.rocket.x, self.rocket.y)
+                fx, fy = self.rocket.get_thrust_force(thrust_mag)
+                ax_thrust = fx / rocket_mass
+                ay_thrust = fy / rocket_mass
+                drag_mag = compute_drag_force(vel, alt, self.rocket.drag_coefficient, self.rocket.cross_sectional_area)
+                ax_drag, ay_drag = 0.0, 0.0
+                if vel > 0.0:
+                    ax_drag = -(self.rocket.vx / vel) * (drag_mag / rocket_mass)
+                    ay_drag = -(self.rocket.vy / vel) * (drag_mag / rocket_mass)
+
+                ax = gx + ax_thrust + ax_drag
+                ay = gy + ay_thrust + ay_drag
+                self.rocket.vx, self.rocket.vy = update_velocity(self.rocket.vx, self.rocket.vy, ax, ay, dt)
+                self.rocket.x, self.rocket.y = update_position(self.rocket.x, self.rocket.y, self.rocket.vx, self.rocket.vy, dt)
             
         # 3. Handle Debris
         for d in self.debris:
@@ -166,3 +177,15 @@ class World:
                 
                 d["vx"], d["vy"] = update_velocity(d["vx"], d["vy"], gx + ax_drag, gy + ay_drag, dt)
                 d["x"], d["y"] = update_position(d["x"], d["y"], d["vx"], d["vy"], dt)
+
+    def estimate_satellite_params(self):
+        oid = getattr(self.mission, "orbit_id", "LEO")
+        veh = self.mission.vehicle_data
+        if oid == "GTO":
+            cap = float(veh.get("payload_geo_kg", 800.0))
+        else:
+            cap = float(veh.get("payload_leo_kg", 800.0))
+        mass = max(200.0, min(5000.0, cap * 0.25))
+        area = 6.0 if oid in ("LEO", "SSO") else 10.0
+        cd = 2.2
+        return mass, area, cd

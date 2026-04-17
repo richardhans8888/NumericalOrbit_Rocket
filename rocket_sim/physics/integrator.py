@@ -39,3 +39,25 @@ def update_position(x, y, vx, vy, dt):
     """
     return x + vx * dt, y + vy * dt
 
+
+def rk4_step_state(state, dt, deriv_fn):
+    """
+    Generic RK4 step for a state vector (list/tuple of floats).
+
+    Args:
+        state: iterable of floats
+        dt: timestep (s)
+        deriv_fn: function(state) -> derivative vector (same length)
+
+    Returns:
+        list of floats (next state)
+    """
+    y0 = list(state)
+    k1 = deriv_fn(y0)
+    y1 = [y0[i] + 0.5 * dt * k1[i] for i in range(len(y0))]
+    k2 = deriv_fn(y1)
+    y2 = [y0[i] + 0.5 * dt * k2[i] for i in range(len(y0))]
+    k3 = deriv_fn(y2)
+    y3 = [y0[i] + dt * k3[i] for i in range(len(y0))]
+    k4 = deriv_fn(y3)
+    return [y0[i] + (dt / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]) for i in range(len(y0))]

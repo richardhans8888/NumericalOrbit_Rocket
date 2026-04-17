@@ -9,6 +9,8 @@ class Rocket:
         self.stages = []
         self.current_stage_index = 0
         self.vehicle_data = vehicle_data
+        self.satellite_mode = False
+        self.satellite_mass = 0.0
         
         # Load stages
         for s in vehicle_data["stages"]:
@@ -45,6 +47,8 @@ class Rocket:
         return math.sqrt(self.vx**2 + self.vy**2)
 
     def get_total_mass(self):
+        if self.satellite_mode:
+            return self.satellite_mass
         mass = sum(stage.get_mass() for stage in self.stages if not stage.detached)
         if self.fairing_attached:
             mass += self.fairing_mass
@@ -80,6 +84,8 @@ class Rocket:
         return event, thrust_magnitude
 
     def get_thrust_force(self, thrust_magnitude):
+        if self.satellite_mode:
+            return 0.0, 0.0
         if thrust_magnitude <= 0.0:
             return 0.0, 0.0
         return compute_thrust_force(thrust_magnitude, self.pitch_angle)
@@ -99,3 +105,13 @@ class Rocket:
             self.fairing_attached = False
             return True
         return False
+
+    def enter_satellite_mode(self, sat_mass_kg=800.0, sat_area_m2=6.0, sat_cd=2.2):
+        self.satellite_mode = True
+        self.satellite_mass = max(1.0, float(sat_mass_kg))
+        self.cross_sectional_area = float(sat_area_m2)
+        self.drag_coefficient = float(sat_cd)
+        self.fairing_attached = False
+        for stg in self.stages:
+            stg.active = False
+            stg.detached = True

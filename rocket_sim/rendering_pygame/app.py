@@ -1426,6 +1426,9 @@ def run_app():
             deploy_state["t"] = deploy_state.get("t", 0.0) + dt
             if deploy_state["t"] >= 2.2:
                 deploy_state["active"] = False
+                if world.phase == FlightPhase.SECO and not getattr(world.rocket, "satellite_mode", False):
+                    m, a, cd = world.estimate_satellite_params() if hasattr(world, "estimate_satellite_params") else (800.0, 6.0, 2.2)
+                    world.rocket.enter_satellite_mode(m, a, cd)
 
         if len(world.debris) > prev_debris_len:
             for d in world.debris[prev_debris_len:]:
