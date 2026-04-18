@@ -198,33 +198,70 @@ VEHICLES = {
         "description": "Record-holder: 104 satellites in one launch. India's reliable polar satellite launch vehicle.",
         "payload_leo_kg": 3800,
         "payload_geo_kg": 1400,
-        "orbit_types": ["LEO", "SSO"],
+        "orbit_types": ["LEO", "SSO", "GTO"],
         "icon_char": "PX",
         "stages": [
             {
-                "name": "PS1 Core + 6 PSOM-XL SRBs",
-                "dry_mass": 26000,
-                "propellant_mass": 238000,
-                "thrust_sl": 7600000,
-                "thrust_vac": 8500000,
-                "burn_time": 107.0,
-                "engine_count": 7,
+                "name": "PS1+S139 (Solid)",
+                "dry_mass": 30200,
+                "propellant_mass": 138000,
+                "thrust_sl": 4846000,
+                "thrust_vac": 5100000,
+                "burn_time": 105.0,
+                "engine_count": 1,
             },
             {
-                "name": "PS4 Upper Stage (2x L-2-5)",
-                "dry_mass": 1100,
-                "propellant_mass": 2500,
+                "name": "PS2 (Vikas Liquid)",
+                "dry_mass": 5300,
+                "propellant_mass": 40700,
                 "thrust_sl": 0,
-                "thrust_vac": 14000,
-                "burn_time": 525.0,
-                "engine_count": 2,
+                "thrust_vac": 799000,
+                "burn_time": 158.0,
+                "engine_count": 1,
             }
         ],
         "fairing": {
-            "mass": 1200,
-            "jettison_altitude": 100000.0
+            "mass": 1150,
+            "jettison_altitude": 115000.0
         },
-        "cross_sectional_area": 8.5,
-        "drag_coefficient": 0.42
+        "cross_sectional_area": 8.0,
+        "drag_coefficient": 0.4
     },
+
+    "CUSTOM": {
+        "name": "Custom Rocket",
+        "manufacturer": "User Defined",
+        "country": "International",
+        "description": "Build your own rocket! Configure mass, thrust, and fuel for a custom mission profile.",
+        "payload_leo_kg": 0,
+        "payload_geo_kg": 0,
+        "orbit_types": ["LEO", "SSO", "MEO", "GTO"],
+        "icon_char": "??",
+        "stages": [
+            {
+                "name": "Custom Stage 1",
+                "dry_mass": 20000,
+                "propellant_mass": 300000,
+                "thrust_sl": 5000000,
+                "thrust_vac": 5500000,
+                "burn_time": 150.0,
+                "engine_count": 1,
+            },
+            {
+                "name": "Custom Stage 2",
+                "dry_mass": 4000,
+                "propellant_mass": 50000,
+                "thrust_sl": 0,
+                "thrust_vac": 500000,
+                "burn_time": 300.0,
+                "engine_count": 1,
+            }
+        ],
+        "fairing": {
+            "mass": 1500,
+            "jettison_altitude": 110000.0
+        },
+        "cross_sectional_area": 10.0,
+        "drag_coefficient": 0.4
+    }
 }

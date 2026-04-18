@@ -56,6 +56,7 @@ ROCKET_ART = {
     "EL":  ["  /\\  ", " /EL\\ ", " |  | ", " \\__/ "],
     "S2":  ["  /\\  ", " /SO\\ ", " |YUZ| ", " | 2 | ", " \\__/ "],
     "PX":  ["  /\\  ", " /PS\\ ", " |LV\\ ", " |  | ", " \\__/ "],
+    "??":  ["  /\\  ", " /??\\ ", " |??| ", " |??| ", " \\__/ "],
 }
 
 # Orbit badge colors map
@@ -66,6 +67,137 @@ ORBIT_COLORS = {
     "GTO": (210, 80, 240),
 }
 
+
+class CustomRocketBuilder:
+    def __init__(self, screen, font_body, font_head, font_small):
+        self.screen = screen
+        self.W, self.H = screen.get_size()
+        self.f_body = font_body
+        self.f_head = font_head
+        self.f_small = font_small
+        self.f_title = pygame.font.SysFont("Menlo", 24, bold=True)
+
+        self.custom_data = VEHICLES["CUSTOM"]
+        self.fields = [
+            {"label": "Rocket Name", "key": "name", "val": str(self.custom_data["name"])},
+            # Stage 1
+            {"label": "S1 Dry Mass (kg)", "key": "dry_mass", "stage": 0, "val": str(self.custom_data["stages"][0]["dry_mass"])},
+            {"label": "S1 Fuel Mass (kg)", "key": "propellant_mass", "stage": 0, "val": str(self.custom_data["stages"][0]["propellant_mass"])},
+            {"label": "S1 Thrust SL (N)", "key": "thrust_sl", "stage": 0, "val": str(self.custom_data["stages"][0]["thrust_sl"])},
+            {"label": "S1 Burn Time (s)", "key": "burn_time", "stage": 0, "val": str(self.custom_data["stages"][0]["burn_time"])},
+            # Stage 2
+            {"label": "S2 Dry Mass (kg)", "key": "dry_mass", "stage": 1, "val": str(self.custom_data["stages"][1]["dry_mass"])},
+            {"label": "S2 Fuel Mass (kg)", "key": "propellant_mass", "stage": 1, "val": str(self.custom_data["stages"][1]["propellant_mass"])},
+            {"label": "S2 Thrust Vac (N)", "key": "thrust_vac", "stage": 1, "val": str(self.custom_data["stages"][1]["thrust_vac"])},
+            {"label": "S2 Burn Time (s)", "key": "burn_time", "stage": 1, "val": str(self.custom_data["stages"][1]["burn_time"])},
+            # General
+            {"label": "Fairing Mass (kg)", "key": "mass", "parent": "fairing", "val": str(self.custom_data["fairing"]["mass"])},
+            {"label": "Drag Coeff (Cd)", "key": "drag_coefficient", "val": str(self.custom_data["drag_coefficient"])},
+            {"label": "Rocket Area (m2)", "key": "cross_sectional_area", "val": str(self.custom_data["cross_sectional_area"])},
+        ]
+        self.active_field = 0
+        self.rects = []
+
+    def draw(self):
+        self.screen.fill(BG)
+        # Header
+        title = "R O C K E T   C O N F I G U R A T O R"
+        t_surf = self.f_title.render(title, True, ACCENT_CYAN)
+        self.screen.blit(t_surf, (self.W // 2 - t_surf.get_width() // 2, 40))
+
+        # Instructions
+        instr = "Use UP/DOWN to select field, type numbers, ENTER to save, ESC to cancel"
+        i_surf = self.f_small.render(instr, True, TEXT_DIM)
+        self.screen.blit(i_surf, (self.W // 2 - i_surf.get_width() // 2, 75))
+
+        self.rects = []
+        x_start = self.W // 2 - 200
+        y_start = 130
+        gap = 45
+
+        for i, field in enumerate(self.fields):
+            y = y_start + i * gap
+            label = self.f_body.render(field["label"], True, TEXT_HI)
+            self.screen.blit(label, (x_start, y))
+
+            # Input box
+            rect = pygame.Rect(x_start + 180, y - 5, 200, 30)
+            self.rects.append(rect)
+            
+            is_active = (i == self.active_field)
+            bg_col = (20, 35, 60) if is_active else PANEL_DARK
+            bord_col = BORDER_SEL if is_active else BORDER
+            
+            draw_rounded_rect(self.screen, bg_col, rect, radius=4, border_color=bord_col, border_w=2 if is_active else 1)
+            
+            val_surf = self.f_body.render(field["val"], True, (255, 255, 255) if is_active else TEXT_DIM)
+            self.screen.blit(val_surf, (rect.x + 8, rect.y + 5))
+
+            if is_active and (pygame.time.get_ticks() // 500) % 2 == 0:
+                # Cursor
+                cx = rect.x + 8 + val_surf.get_width()
+                pygame.draw.line(self.screen, ACCENT_CYAN, (cx, rect.y + 5), (cx, rect.y + 25), 2)
+
+        # Bottom buttons hint
+        bx = self.W // 2
+        by = self.H - 60
+        self.screen.blit(self.f_head.render("[ ENTER ] SAVE CONFIG", True, ACCENT_GRN), (bx - 220, by))
+        self.screen.blit(self.f_head.render("[ ESC ] CANCEL", True, ACCENT_RED), (bx + 40, by))
+
+        pygame.display.flip()
+
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                return "CANCEL"
+            elif event.key == pygame.K_RETURN:
+                self.save()
+                return "SAVE"
+            elif event.key == pygame.K_UP:
+                self.active_field = (self.active_field - 1) % len(self.fields)
+            elif event.key == pygame.K_DOWN:
+                self.active_field = (self.active_field + 1) % len(self.fields)
+            elif event.key == pygame.K_BACKSPACE:
+                self.fields[self.active_field]["val"] = self.fields[self.active_field]["val"][:-1]
+            else:
+                if self.fields[self.active_field]["key"] == "name":
+                    if event.unicode.isprintable():
+                        self.fields[self.active_field]["val"] += event.unicode
+                elif event.unicode in "0123456789.":
+                    self.fields[self.active_field]["val"] += event.unicode
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            for i, rect in enumerate(self.rects):
+                if rect.collidepoint(event.pos):
+                    self.active_field = i
+
+        return None
+
+    def save(self):
+        for field in self.fields:
+            if field["key"] == "name":
+                self.custom_data["name"] = field["val"]
+                continue
+
+            try:
+                val = float(field["val"])
+            except ValueError:
+                continue
+
+            if "stage" in field:
+                s_idx = field["stage"]
+                self.custom_data["stages"][s_idx][field["key"]] = val
+                # Sync thrusts for S1 if it's thrust_sl
+                if field["key"] == "thrust_sl" and s_idx == 0:
+                    self.custom_data["stages"][0]["thrust_vac"] = val * 1.1 # Approx vac thrust
+            elif "parent" in field:
+                self.custom_data[field["parent"]][field["key"]] = val
+            else:
+                self.custom_data[field["key"]] = val
+        
+        # Update name/desc to reflect custom status
+        self.custom_data["name"] = "Custom Rocket (Modified)"
+        VEHICLES["CUSTOM"] = self.custom_data
 
 class VehicleSelectScreen:
     def __init__(self, screen: pygame.Surface):
@@ -204,6 +336,11 @@ class VehicleSelectScreen:
         ns = len(veh.get("stages", []))
         self.screen.blit(self.f_tiny.render(f"{ns}-stage vehicle", True, TEXT_TINY), (x, y))
 
+        if veh_id == "CUSTOM":
+            y += 14
+            edit_txt = "Press E or Click to Edit Parameters"
+            self.screen.blit(self.f_tiny.render(edit_txt, True, ACCENT_GOLD), (x, y))
+
     def _draw_orbit_panel(self, idx, orbit_id):
         orb  = ORBITS[orbit_id]
         rect = self._orbit_rect(idx)
@@ -327,7 +464,7 @@ class VehicleSelectScreen:
         pygame.display.flip()
 
     def handle_event(self, event):
-        """Returns (vid, oid) if launch confirmed, else None."""
+        """Returns (vid, oid) if launch confirmed, else 'BUILD' if custom edit requested, else None."""
         if event.type == pygame.QUIT:
             pygame.quit(); sys.exit()
 
@@ -336,6 +473,9 @@ class VehicleSelectScreen:
                 pygame.quit(); sys.exit()
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 return self._do_launch()
+            elif event.key == pygame.K_e: # Shortcut for edit
+                if self.vehicle_ids[self.sel_vehicle] == "CUSTOM":
+                    return "BUILD"
             elif event.key == pygame.K_RIGHT:
                 self.sel_vehicle = (self.sel_vehicle + 1) % len(self.vehicle_ids)
             elif event.key == pygame.K_LEFT:
@@ -353,6 +493,9 @@ class VehicleSelectScreen:
             for i, vid in enumerate(self.vehicle_ids):
                 if self._card_rect(i).collidepoint(mx, my):
                     self.sel_vehicle = i
+                    # If clicking already selected custom rocket, open builder
+                    if vid == "CUSTOM":
+                        return "BUILD"
             # Orbit panels
             for i, oid in enumerate(self.orbit_ids):
                 if self._orbit_rect(i).collidepoint(mx, my):
@@ -389,13 +532,23 @@ def run_selection(screen, clock, fps=60) -> tuple:
     Returns (vehicle_id: str, orbit_id: str).
     """
     sel = VehicleSelectScreen(screen)
+    builder = None
+    
     while True:
         dt = clock.tick(fps) / 1000.0
-        sel.tick(dt)
-
-        for event in pygame.event.get():
-            result = sel.handle_event(event)
-            if result is not None:
-                return result
-
-        sel.draw()
+        
+        if builder:
+            builder.draw()
+            for event in pygame.event.get():
+                res = builder.handle_event(event)
+                if res == "SAVE" or res == "CANCEL":
+                    builder = None
+        else:
+            sel.tick(dt)
+            for event in pygame.event.get():
+                result = sel.handle_event(event)
+                if result == "BUILD":
+                    builder = CustomRocketBuilder(screen, sel.f_body, sel.f_head, sel.f_small)
+                elif result is not None:
+                    return result
+            sel.draw()
