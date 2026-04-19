@@ -174,12 +174,14 @@ class CustomRocketBuilder:
         self.custom_data["stages"][0]["thrust_sl"] = s1_t_sl
         self.custom_data["stages"][0]["thrust_vac"] = s1_t_vac
         self.custom_data["stages"][0]["burn_time"] = s1_fuel / (s1_t_vac / (s1_isp * g0)) if s1_isp > 0 and s1_t_vac > 0 else 150
+        self.custom_data["stages"][0]["engine_count"] = ec1
         
         self.custom_data["stages"][1]["dry_mass"] = s2_dry
         self.custom_data["stages"][1]["propellant_mass"] = s2_fuel
         self.custom_data["stages"][1]["thrust_sl"] = 0
         self.custom_data["stages"][1]["thrust_vac"] = s2_t_vac
         self.custom_data["stages"][1]["burn_time"] = s2_fuel / (s2_t_vac / (s2_isp * g0)) if s2_isp > 0 and s2_t_vac > 0 else 300
+        self.custom_data["stages"][1]["engine_count"] = 1 # Upper stage usually 1
 
         self.custom_data["fairing"]["mass"] = f["mass"]
         self.custom_data["fairing"]["jettison_altitude"] = f["jettison_altitude"]

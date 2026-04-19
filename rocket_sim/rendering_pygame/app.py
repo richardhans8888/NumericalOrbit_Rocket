@@ -162,11 +162,15 @@ def cylinder_fill(surf, rect, base_color, edge_color=None, highlight=True):
     pygame.draw.rect(surf, edge_color, rect, 1)
 
 
-def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
-    show_boosters = stage_index == 0
+def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached, engine_count=1, body_color=None, is_heavy_f=False):
+    show_boosters = stage_index == 0 and engine_count > 3 # Only show side boosters if many engines
     ppm = max(0.00001, core_w_px / 8.4)
     total_w = core_w_px + (int(7.4 * ppm) if show_boosters else 0)
-    nose_h = max(14, int(9.0 * ppm))
+    
+    # Fairing height
+    nose_h = max(14, int(12.0 * ppm))
+    if is_heavy_f: nose_h = int(nose_h * 1.5)
+    
     bell_pad = max(10, int(5.5 * ppm))
     total_h = core_h_px + nose_h + bell_pad + 6
     surf = pygame.Surface((max(2, total_w), max(2, total_h)), pygame.SRCALPHA)
@@ -180,7 +184,11 @@ def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
     core_x = cx - core_w // 2
     core_y = base_y - core_h
 
-    body_col = (235, 235, 234) if stage_index >= 1 else (232, 118, 28)
+    if body_color is None:
+        body_col = (235, 235, 234) if stage_index >= 1 else (232, 118, 28)
+    else:
+        body_col = body_color
+        
     cylinder_fill(surf, pygame.Rect(core_x, core_y, core_w, core_h), body_col)
 
     if stage_index <= 1:
@@ -212,18 +220,24 @@ def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
     )
 
     noz_y = base_y + 1
-    if stage_index == 0:
-        n_cnt = 3
-        bell_w = max(5, int(1.8 * ppm))
-        bell_h = max(6, int(2.6 * ppm))
-    else:
-        n_cnt = 1
-        bell_w = max(5, int(2.2 * ppm))
-        bell_h = max(7, int(3.0 * ppm))
-    if core_w >= 10:
+    # Draw engines based on engine_count
+    n_cnt = engine_count
+    bell_w = max(4, int(1.4 * ppm))
+    bell_h = max(5, int(2.2 * ppm))
+    
+    if n_cnt == 1:
+        bell_w = max(5, int(2.4 * ppm))
+        bell_h = max(7, int(3.2 * ppm))
+        
+    if core_w >= 6:
         for i in range(n_cnt):
-            t = (i + 1) / (n_cnt + 1)
-            bx = core_x + int(t * core_w) - bell_w // 2
+            # Distribute engines
+            if n_cnt == 1:
+                t = 0.5
+            else:
+                t = (i) / (n_cnt - 1) if n_cnt > 1 else 0.5
+                
+            bx = core_x + int(t * (core_w - bell_w))
             pygame.draw.polygon(
                 surf,
                 (40, 40, 45, 220),
@@ -236,23 +250,25 @@ def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
                 1,
             )
 
-    nose_w = int(core_w * (1.05 if fairing_attached else 0.92))
+    # Fairing
+    nose_w = int(core_w * (1.15 if is_heavy_f else 1.05 if fairing_attached else 0.92))
     nx = cx - nose_w // 2
     ny = core_y - nose_h + 2
     if fairing_attached:
-        cylinder_fill(surf, pygame.Rect(nx, ny + int(nose_h * 0.25), nose_w, int(nose_h * 0.75)), (240, 240, 242))
+        cylinder_fill(surf, pygame.Rect(nx, ny + int(nose_h * 0.35), nose_w, int(nose_h * 0.65)), (240, 240, 242))
         pygame.draw.polygon(
             surf,
             (240, 240, 242, 255),
-            [(nx, ny + int(nose_h * 0.28)), (nx + nose_w, ny + int(nose_h * 0.28)), (cx, ny)],
+            [(nx, ny + int(nose_h * 0.38)), (nx + nose_w, ny + int(nose_h * 0.38)), (cx, ny)],
         )
         pygame.draw.polygon(
             surf,
             (0, 0, 0, 50),
-            [(nx, ny + int(nose_h * 0.28)), (nx + nose_w, ny + int(nose_h * 0.28)), (cx, ny)],
+            [(nx, ny + int(nose_h * 0.38)), (nx + nose_w, ny + int(nose_h * 0.38)), (cx, ny)],
             1,
         )
     else:
+        # Just a small cone if no fairing
         pygame.draw.polygon(
             surf,
             (235, 235, 236, 255),
@@ -989,14 +1005,19 @@ def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase, deploy_state=None):
         surface.blit(rot, rect.topleft)
         return
 
-    core_h_m = 64.0
-    if stage >= 2:
-        core_h_m = 40.0
-
+    # Calculate dimensions based on actual vehicle data
+    stg_data = rocket.vehicle_data["stages"][stage]
+    
+    # Heuristic for physical dimensions in meters
+    # Base height on propellant mass (e.g. 400t -> ~40m)
+    core_h_m = stg_data["propellant_mass"] / 10000.0 + 15.0
+    # Base width on cross sectional area
+    core_w_m = math.sqrt(rocket.cross_sectional_area / math.pi) * 2.0
+    
     core_h_px = int(core_h_m * zoom)
-    core_w_px = int(8.4 * zoom)
+    core_w_px = int(core_w_m * zoom)
 
-    if core_h_px < 18 or core_w_px < 6:
+    if core_h_px < 10 or core_w_px < 4:
         pygame.draw.circle(surface, C_WHITE, (base_sx, base_sy), max(2, int(2 * zoom)))
         return
 
@@ -1005,10 +1026,26 @@ def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase, deploy_state=None):
         cache = {}
         setattr(draw_rocket, "_sprite_cache", cache)
 
-    key = (core_h_px, core_w_px, stage, bool(rocket.fairing_attached))
+    # Unique key for different vehicles and stages
+    ec = stg_data.get("engine_count", 1)
+    v_id = rocket.vehicle_data.get("name", "generic")
+    
+    # Fairing size heuristic
+    f_mass = rocket.vehicle_data.get("fairing", {}).get("mass", 0)
+    is_heavy_f = f_mass > 2000
+    
+    # Custom colors based on manufacturer
+    mfr = rocket.vehicle_data.get("manufacturer", "").upper()
+    body_col = (235, 235, 234) # Default white
+    if "SPACEX" in mfr: body_col = (240, 240, 245)
+    elif "ULA" in mfr: body_col = (220, 225, 235)
+    elif "ISRO" in mfr: body_col = (235, 180, 140)
+    elif "USER" in mfr: body_col = (200, 210, 225) # Custom blue-ish
+    
+    key = (v_id, core_h_px, core_w_px, stage, bool(rocket.fairing_attached), ec, is_heavy_f)
     spr = cache.get(key)
     if spr is None:
-        spr = render_rocket_sprite(core_h_px, core_w_px, stage, rocket.fairing_attached)
+        spr = render_rocket_sprite(core_h_px, core_w_px, stage, rocket.fairing_attached, engine_count=ec, body_color=body_col)
         cache[key] = spr
 
     rot_deg = math.degrees(pitch - math.pi / 2.0)
