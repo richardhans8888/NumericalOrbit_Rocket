@@ -24,10 +24,10 @@ ORBITS = {
     },
     "SSO": {
         "name": "Sun-Synchronous Orbit (SSO)",
-        "target_altitude_m": 500000.0,           # 500 km
-        "target_velocity_m_s": 7613.0,
-        "inclination_deg": 97.4,
-        "description": "500 km polar orbit. Consistent sun angle — ideal for Earth observation satellites.",
+        "target_altitude_m": 505000.0,           # 505 km
+        "target_velocity_m_s": 7609.0,
+        "inclination_deg": 97.46,
+        "description": "505 km polar orbit. Consistent sun angle — ideal for Earth observation satellites.",
         "color": (100, 255, 140),                # green
     },
     "MEO": {

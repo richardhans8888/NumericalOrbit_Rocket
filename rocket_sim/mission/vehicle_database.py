@@ -15,6 +15,15 @@ VEHICLES = {
         "payload_geo_kg": 8300,
         "orbit_types": ["LEO", "GTO", "SSO"],
         "icon_char": "F9",
+        "dimensions": {
+            "height_m": 70.0,
+            "diameter_m": 3.66
+        },
+        "render_style": {
+            "grid_fins": True,
+            "landing_legs": True,
+            "interstage_band": True
+        },
         "stages": [
             {
                 "name": "Stage 1 (Merlin 9x)",
@@ -24,6 +33,7 @@ VEHICLES = {
                 "thrust_vac": 8227000,
                 "burn_time": 162.0,
                 "engine_count": 9,
+                "length_m": 41.0
             },
             {
                 "name": "Stage 2 (Merlin Vac)",
@@ -33,6 +43,7 @@ VEHICLES = {
                 "thrust_vac": 934000,
                 "burn_time": 397.0,
                 "engine_count": 1,
+                "length_m": 15.0
             }
         ],
         "fairing": {
@@ -202,30 +213,53 @@ VEHICLES = {
         "icon_char": "PX",
         "stages": [
             {
-                "name": "PS1+S139 (Solid)",
-                "dry_mass": 30200,
-                "propellant_mass": 138000,
-                "thrust_sl": 4846000,
-                "thrust_vac": 5100000,
-                "burn_time": 105.0,
-                "engine_count": 1,
+                "name": "PS1 Core + 6 PSOM-XL SRBs",
+                "dry_mass": 26000,
+                "propellant_mass": 238000,
+                "thrust_sl": 7600000,
+                "thrust_vac": 8500000,
+                "burn_time": 107.0,
+                "engine_count": 7,
+                "length_m": 20.0
             },
             {
                 "name": "PS2 (Vikas Liquid)",
                 "dry_mass": 5300,
                 "propellant_mass": 40700,
-                "thrust_sl": 0,
+                "thrust_sl": 799000,
                 "thrust_vac": 799000,
                 "burn_time": 158.0,
                 "engine_count": 1,
+            },
+            {
+                "name": "PS3 (Solid)",
+                "dry_mass": 2600,
+                "propellant_mass": 7000,
+                "thrust_sl": 240000,
+                "thrust_vac": 240000,
+                "burn_time": 114.0,
+                "engine_count": 1,
+            },
+            {
+                "name": "PS4 Upper Stage (2x L-2-5)",
+                "dry_mass": 1100,
+                "propellant_mass": 2500,
+                "thrust_sl": 0,
+                "thrust_vac": 14000,
+                "burn_time": 525.0,
+                "engine_count": 2,
+                "length_m": 3.0
             }
         ],
-        "fairing": {
-            "mass": 1150,
-            "jettison_altitude": 115000.0
+        "render_style": {
+            "side_boosters": True
         },
-        "cross_sectional_area": 8.0,
-        "drag_coefficient": 0.4
+        "fairing": {
+            "mass": 1200,
+            "jettison_altitude": 100000.0
+        },
+        "cross_sectional_area": 8.5,
+        "drag_coefficient": 0.42
     },
 
     "CUSTOM": {

@@ -162,11 +162,16 @@ def cylinder_fill(surf, rect, base_color, edge_color=None, highlight=True):
     pygame.draw.rect(surf, edge_color, rect, 1)
 
 
-def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
-    show_boosters = stage_index == 0
+def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached, engine_count=1, body_color=None, is_heavy_f=False, style=None):
+    style = style or {}
+    show_boosters = bool(style.get("side_boosters", False)) and stage_index == 0
     ppm = max(0.00001, core_w_px / 8.4)
     total_w = core_w_px + (int(7.4 * ppm) if show_boosters else 0)
-    nose_h = max(14, int(9.0 * ppm))
+    
+    # Fairing height
+    nose_h = max(14, int(12.0 * ppm))
+    if is_heavy_f: nose_h = int(nose_h * 1.5)
+    
     bell_pad = max(10, int(5.5 * ppm))
     total_h = core_h_px + nose_h + bell_pad + 6
     surf = pygame.Surface((max(2, total_w), max(2, total_h)), pygame.SRCALPHA)
@@ -180,7 +185,11 @@ def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
     core_x = cx - core_w // 2
     core_y = base_y - core_h
 
-    body_col = (235, 235, 234) if stage_index >= 1 else (232, 118, 28)
+    if body_color is None:
+        body_col = (235, 235, 234) if stage_index >= 1 else (232, 118, 28)
+    else:
+        body_col = body_color
+        
     cylinder_fill(surf, pygame.Rect(core_x, core_y, core_w, core_h), body_col)
 
     if stage_index <= 1:
@@ -192,6 +201,20 @@ def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
         ]:
             pygame.draw.rect(surf, (20, 20, 24, 40), (core_x, ry, core_w, ring_h))
             pygame.draw.line(surf, (255, 255, 255, 60), (core_x + 1, ry), (core_x + core_w - 2, ry))
+
+    if style.get("interstage_band", False) and stage_index == 0:
+        band_h = max(3, int(0.05 * core_h))
+        by = core_y + int(core_h * 0.12)
+        pygame.draw.rect(surf, (10, 10, 12, 90), (core_x, by, core_w, band_h))
+
+    if style.get("grid_fins", False) and stage_index == 0:
+        gf_w = max(4, int(0.12 * core_w))
+        gf_h = max(4, int(0.06 * core_h))
+        gy = core_y + int(core_h * 0.05)
+        for sgn in (-1, 1):
+            gx = cx + sgn * (core_w // 2 + max(2, int(0.02 * core_w))) - (gf_w if sgn > 0 else 0)
+            pygame.draw.rect(surf, (25, 25, 28, 190), (gx, gy, gf_w, gf_h))
+            pygame.draw.rect(surf, (0, 0, 0, 80), (gx, gy, gf_w, gf_h), 1)
 
     inter_h = max(4, int(2.0 * ppm))
     pygame.draw.rect(surf, (245, 245, 245, 120), (core_x + 1, core_y + core_h - inter_h, core_w - 2, inter_h))
@@ -212,47 +235,103 @@ def render_rocket_sprite(core_h_px, core_w_px, stage_index, fairing_attached):
     )
 
     noz_y = base_y + 1
-    if stage_index == 0:
-        n_cnt = 3
-        bell_w = max(5, int(1.8 * ppm))
-        bell_h = max(6, int(2.6 * ppm))
-    else:
-        n_cnt = 1
-        bell_w = max(5, int(2.2 * ppm))
-        bell_h = max(7, int(3.0 * ppm))
-    if core_w >= 10:
-        for i in range(n_cnt):
-            t = (i + 1) / (n_cnt + 1)
-            bx = core_x + int(t * core_w) - bell_w // 2
+    # Draw engines based on engine_count
+    n_cnt = max(1, int(engine_count))
+    bell_w = max(4, int(1.4 * ppm))
+    bell_h = max(5, int(2.2 * ppm))
+    
+    if n_cnt == 1:
+        bell_w = max(5, int(2.4 * ppm))
+        bell_h = max(7, int(3.2 * ppm))
+        
+    def draw_bell(bx):
+        pygame.draw.polygon(
+            surf,
+            (40, 40, 45, 220),
+            [(bx, base_y), (bx + bell_w, base_y), (bx + int(bell_w * 0.7), noz_y + bell_h), (bx + int(bell_w * 0.3), noz_y + bell_h)],
+        )
+        pygame.draw.polygon(
+            surf,
+            (0, 0, 0, 55),
+            [(bx, base_y), (bx + bell_w, base_y), (bx + int(bell_w * 0.7), noz_y + bell_h), (bx + int(bell_w * 0.3), noz_y + bell_h)],
+            1,
+        )
+
+    if core_w >= 6:
+        if n_cnt >= 7:
+            cols = 3
+            rows = 3
+            gap_x = max(1, int((core_w - cols * bell_w) / (cols + 1)))
+            gap_y = max(1, int(0.28 * bell_h))
+            start_x = core_x + gap_x
+            start_y = base_y - bell_h - max(1, int(0.06 * core_w))
+            idx = 0
+            for r_ in range(rows):
+                for c_ in range(cols):
+                    if idx >= n_cnt:
+                        break
+                    bx = start_x + c_ * (bell_w + gap_x)
+                    by = start_y + r_ * gap_y
+                    pygame.draw.polygon(
+                        surf,
+                        (40, 40, 45, 220),
+                        [(bx, by), (bx + bell_w, by), (bx + int(bell_w * 0.7), by + bell_h), (bx + int(bell_w * 0.3), by + bell_h)],
+                    )
+                    pygame.draw.polygon(
+                        surf,
+                        (0, 0, 0, 55),
+                        [(bx, by), (bx + bell_w, by), (bx + int(bell_w * 0.7), by + bell_h), (bx + int(bell_w * 0.3), by + bell_h)],
+                        1,
+                    )
+                    idx += 1
+                if idx >= n_cnt:
+                    break
+        else:
+            for i in range(n_cnt):
+                if n_cnt == 1:
+                    t = 0.5
+                else:
+                    t = (i) / (n_cnt - 1) if n_cnt > 1 else 0.5
+                bx = core_x + int(t * (core_w - bell_w))
+                draw_bell(bx)
+
+    if style.get("landing_legs", False) and stage_index == 0:
+        leg_len = max(8, int(0.18 * core_w))
+        leg_h = max(6, int(0.10 * core_h))
+        ly = base_y - max(2, int(0.06 * core_h))
+        for sgn in (-1, 1):
+            lx = core_x + (0 if sgn < 0 else core_w)
             pygame.draw.polygon(
                 surf,
-                (40, 40, 45, 220),
-                [(bx, base_y), (bx + bell_w, base_y), (bx + int(bell_w * 0.7), noz_y + bell_h), (bx + int(bell_w * 0.3), noz_y + bell_h)],
+                (200, 200, 205, 140),
+                [(lx, ly), (lx + sgn * leg_len, ly - leg_h), (lx + sgn * int(leg_len * 0.65), ly + int(leg_h * 0.15))],
             )
             pygame.draw.polygon(
                 surf,
-                (0, 0, 0, 55),
-                [(bx, base_y), (bx + bell_w, base_y), (bx + int(bell_w * 0.7), noz_y + bell_h), (bx + int(bell_w * 0.3), noz_y + bell_h)],
+                (0, 0, 0, 60),
+                [(lx, ly), (lx + sgn * leg_len, ly - leg_h), (lx + sgn * int(leg_len * 0.65), ly + int(leg_h * 0.15))],
                 1,
             )
 
-    nose_w = int(core_w * (1.05 if fairing_attached else 0.92))
+    # Fairing
+    nose_w = int(core_w * (1.15 if is_heavy_f else 1.05 if fairing_attached else 0.92))
     nx = cx - nose_w // 2
     ny = core_y - nose_h + 2
     if fairing_attached:
-        cylinder_fill(surf, pygame.Rect(nx, ny + int(nose_h * 0.25), nose_w, int(nose_h * 0.75)), (240, 240, 242))
+        cylinder_fill(surf, pygame.Rect(nx, ny + int(nose_h * 0.35), nose_w, int(nose_h * 0.65)), (240, 240, 242))
         pygame.draw.polygon(
             surf,
             (240, 240, 242, 255),
-            [(nx, ny + int(nose_h * 0.28)), (nx + nose_w, ny + int(nose_h * 0.28)), (cx, ny)],
+            [(nx, ny + int(nose_h * 0.38)), (nx + nose_w, ny + int(nose_h * 0.38)), (cx, ny)],
         )
         pygame.draw.polygon(
             surf,
             (0, 0, 0, 50),
-            [(nx, ny + int(nose_h * 0.28)), (nx + nose_w, ny + int(nose_h * 0.28)), (cx, ny)],
+            [(nx, ny + int(nose_h * 0.38)), (nx + nose_w, ny + int(nose_h * 0.38)), (cx, ny)],
             1,
         )
     else:
+        # Just a small cone if no fairing
         pygame.draw.polygon(
             surf,
             (235, 235, 236, 255),
@@ -399,6 +478,49 @@ def spawn_exhaust(particles, rocket, manual_throttle, dt, intensity=1.0):
                     "kind": "smoke",
                 }
             )
+
+def spawn_explosion(particles, x, y, intensity=1.0):
+    n_flame = int(220 * intensity)
+    for _ in range(n_flame):
+        ang = random.uniform(0, math.tau)
+        spd = random.uniform(40, 220) * (0.7 + 0.6 * intensity)
+        vx = math.cos(ang) * spd + random.uniform(-18, 18)
+        vy = math.sin(ang) * spd + random.uniform(-18, 18)
+        life = random.uniform(0.25, 0.65) * (0.9 + 0.4 * intensity)
+        r0 = random.uniform(2.0, 6.0) * (0.9 + 0.8 * intensity)
+        particles.append(
+            {
+                "x": x + random.uniform(-2.0, 2.0),
+                "y": y + random.uniform(-2.0, 2.0),
+                "vx": vx,
+                "vy": vy,
+                "life": life,
+                "ttl": life,
+                "r": r0,
+                "kind": "flame",
+            }
+        )
+
+    n_smoke = int(180 * intensity)
+    for _ in range(n_smoke):
+        ang = random.uniform(0, math.tau)
+        spd = random.uniform(10, 80) * (0.7 + 0.6 * intensity)
+        vx = math.cos(ang) * spd + random.uniform(-10, 10)
+        vy = math.sin(ang) * spd + random.uniform(-10, 10)
+        life = random.uniform(1.2, 2.8) * (0.9 + 0.5 * intensity)
+        r0 = random.uniform(3.0, 8.5) * (0.9 + 0.8 * intensity)
+        particles.append(
+            {
+                "x": x + random.uniform(-3.2, 3.2),
+                "y": y + random.uniform(-3.2, 3.2),
+                "vx": vx,
+                "vy": vy,
+                "life": life,
+                "ttl": life,
+                "r": r0,
+                "kind": "smoke",
+            }
+        )
 
 
 def update_particles(particles, dt):
@@ -794,28 +916,97 @@ def draw_earth_detailed(surface, cam_x, cam_y, zoom):
     rp = int(EARTH_RADIUS * zoom)
     if rp < 5 or rp > 2e6:
         return
-    for i in range(3):
-        gr = rp + int(rp * 0.025 * (3 - i))
-        if gr < 3000:
-            pygame.draw.circle(surface, (40 + i * 30, 100 + i * 30, 180 + i * 15),
-                               (cx, cy), gr, 3)
-    pygame.draw.circle(surface, C_OCEAN, (cx, cy), rp)
-    continents = [
-        (0.15, 0.3, 0.25, 0.35, C_LAND1), (-0.1, -0.2, 0.2, 0.25, C_LAND2),
-        (0.5, 0.25, 0.15, 0.30, C_LAND1), (0.55, -0.1, 0.12, 0.20, C_DESERT),
-        (0.8, 0.15, 0.20, 0.15, C_LAND3), (0.0, -0.6, 0.3, 0.1, C_ICE),
-        (0.0, 0.65, 0.15, 0.08, C_ICE),
-    ]
-    for cfx, cfy, wf, hf, col in continents:
-        lx = cx + int(cfx * rp) - int(wf * rp / 2)
-        ly = cy - int(cfy * rp) - int(hf * rp / 2)
-        lw = max(2, int(wf * rp))
-        lh = max(2, int(hf * rp))
-        if lw < 2000 and lh < 2000:
-            s = pygame.Surface((lw, lh), pygame.SRCALPHA)
-            pygame.draw.ellipse(s, (*col, 200), (0, 0, lw, lh))
-            surface.blit(s, (lx, ly))
-    pygame.draw.circle(surface, (60, 130, 200), (cx, cy), rp, 2)
+    # Safety: when rp is large, avoid allocating giant intermediate surfaces (can crash/segfault).
+    # For close views, use a lightweight draw path.
+    if rp > 1200:
+        pygame.draw.circle(surface, C_OCEAN, (cx, cy), rp)
+        pygame.draw.circle(surface, (60, 130, 200), (cx, cy), rp, 2)
+        for i, (col, a, wf) in enumerate([
+            ((18, 45, 85), 32, 0.08),
+            ((20, 60, 120), 26, 0.06),
+            ((30, 95, 190), 20, 0.04),
+        ]):
+            rr = int(rp * (1.0 + wf))
+            if rr < 20000:
+                pygame.draw.circle(surface, (*col, a), (cx, cy), rr, max(1, int(rp * 0.01)))
+        return
+
+    rp_key = max(5, int(rp // 4) * 4)
+    ticks = pygame.time.get_ticks()
+    sun_a = (ticks / 22000.0) % (math.tau)
+    sun_bucket = int((sun_a / math.tau) * 24) % 24
+    rot_a = (ticks / 65000.0) % (math.tau)
+
+    cache = getattr(draw_earth_detailed, "_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(draw_earth_detailed, "_cache", cache)
+
+    key = (rp_key, sun_bucket)
+    spr = cache.get(key)
+    if spr is None:
+        pad = max(6, int(rp_key * 0.02))
+        size = rp_key * 2 + pad * 2
+        spr = pygame.Surface((size, size), pygame.SRCALPHA)
+        scx = size // 2
+        scy = size // 2
+
+        pygame.draw.circle(spr, (18, 45, 85, 35), (scx, scy), int(rp_key * 1.08), max(1, int(rp_key * 0.03)))
+        pygame.draw.circle(spr, (20, 60, 120, 28), (scx, scy), int(rp_key * 1.05), max(1, int(rp_key * 0.02)))
+        pygame.draw.circle(spr, (30, 95, 190, 20), (scx, scy), int(rp_key * 1.03), max(1, int(rp_key * 0.015)))
+
+        pygame.draw.circle(spr, C_OCEAN, (scx, scy), rp_key)
+
+        continents = [
+            (0.15, 0.3, 0.25, 0.35, C_LAND1), (-0.1, -0.2, 0.2, 0.25, C_LAND2),
+            (0.5, 0.25, 0.15, 0.30, C_LAND1), (0.55, -0.1, 0.12, 0.20, C_DESERT),
+            (0.8, 0.15, 0.20, 0.15, C_LAND3), (0.0, -0.6, 0.3, 0.1, C_ICE),
+            (0.0, 0.65, 0.15, 0.08, C_ICE),
+        ]
+        cr = math.cos(rot_a)
+        sr = math.sin(rot_a)
+        for cfx, cfy, wf, hf, col in continents:
+            rx = cfx * cr - cfy * sr
+            ry = cfx * sr + cfy * cr
+            lx = scx + int(rx * rp_key) - int(wf * rp_key / 2)
+            ly = scy - int(ry * rp_key) - int(hf * rp_key / 2)
+            lw = max(2, int(wf * rp_key))
+            lh = max(2, int(hf * rp_key))
+            if lw < 2400 and lh < 2400:
+                s = pygame.Surface((lw, lh), pygame.SRCALPHA)
+                pygame.draw.ellipse(s, (*col, 210), (0, 0, lw, lh))
+                spr.blit(s, (lx, ly))
+
+        random.seed((rp_key * 131) ^ (sun_bucket * 17))
+        for _ in range(18):
+            ex = scx + random.randint(-rp_key // 2, rp_key // 2)
+            ey = scy + random.randint(-rp_key // 2, rp_key // 2)
+            ew = random.randint(int(rp_key * 0.10), int(rp_key * 0.26))
+            eh = random.randint(int(rp_key * 0.05), int(rp_key * 0.14))
+            cloud = pygame.Surface((ew, eh), pygame.SRCALPHA)
+            pygame.draw.ellipse(cloud, (245, 250, 255, 40), (0, 0, ew, eh))
+            spr.blit(cloud, (ex - ew // 2, ey - eh // 2))
+
+        shade = pygame.Surface((size, size), pygame.SRCALPHA)
+        sdx = math.cos((sun_bucket / 24.0) * math.tau)
+        for x in range(size):
+            nx = (x - scx) / max(1.0, float(rp_key))
+            lit = 0.18 + 0.82 * max(0.0, min(1.0, 0.5 + 0.5 * nx * sdx))
+            v = int(55 + 200 * lit)
+            pygame.draw.line(shade, (v, v, v, 255), (x, 0), (x, size - 1))
+        mask = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.circle(mask, (255, 255, 255, 255), (scx, scy), rp_key)
+        shade.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        spr.blit(shade, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        hx = int(scx + rp_key * 0.30 * sdx)
+        hy = int(scy - rp_key * 0.10)
+        pygame.draw.circle(spr, (255, 255, 255, 28), (hx, hy), int(rp_key * 0.55))
+
+        pygame.draw.circle(spr, (60, 130, 200, 220), (scx, scy), rp_key, max(1, int(rp_key * 0.006)))
+        cache[key] = spr
+
+    surface.blit(spr, (cx - spr.get_width() // 2, cy - spr.get_height() // 2))
 
 
 def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
@@ -989,14 +1180,34 @@ def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase, deploy_state=None):
         surface.blit(rot, rect.topleft)
         return
 
-    core_h_m = 64.0
-    if stage >= 2:
-        core_h_m = 40.0
+    # Calculate dimensions based on actual vehicle data
+    v_stages = rocket.vehicle_data.get("stages", [])
+    if not v_stages:
+        return
 
+    stage_idx = stage
+    if stage_idx >= len(v_stages):
+        stage_idx = len(v_stages) - 1
+    if stage_idx < 0:
+        stage_idx = 0
+
+    stg_data = v_stages[stage_idx]
+    
+    dims = rocket.vehicle_data.get("dimensions", {})
+    if "length_m" in stg_data:
+        core_h_m = float(stg_data["length_m"])
+    else:
+        core_h_m = stg_data["propellant_mass"] / 10000.0 + 15.0
+
+    if "diameter_m" in dims:
+        core_w_m = float(dims["diameter_m"])
+    else:
+        core_w_m = math.sqrt(rocket.cross_sectional_area / math.pi) * 2.0
+    
     core_h_px = int(core_h_m * zoom)
-    core_w_px = int(8.4 * zoom)
+    core_w_px = int(core_w_m * zoom)
 
-    if core_h_px < 18 or core_w_px < 6:
+    if core_h_px < 10 or core_w_px < 4:
         pygame.draw.circle(surface, C_WHITE, (base_sx, base_sy), max(2, int(2 * zoom)))
         return
 
@@ -1005,10 +1216,33 @@ def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase, deploy_state=None):
         cache = {}
         setattr(draw_rocket, "_sprite_cache", cache)
 
-    key = (core_h_px, core_w_px, stage, bool(rocket.fairing_attached))
+    # Unique key for different vehicles and stages
+    ec = int(stg_data.get("engine_count", 1) or 1)
+    v_id = rocket.vehicle_data.get("name", "generic")
+    
+    # Fairing size heuristic
+    f_mass = rocket.vehicle_data.get("fairing", {}).get("mass", 0)
+    is_heavy_f = f_mass > 2000
+    
+    # Custom colors based on manufacturer
+    mfr = rocket.vehicle_data.get("manufacturer", "").upper()
+    body_col = (235, 235, 234) # Default white
+    if "SPACEX" in mfr: body_col = (240, 240, 245)
+    elif "ULA" in mfr: body_col = (220, 225, 235)
+    elif "ISRO" in mfr: body_col = (235, 180, 140)
+    elif "USER" in mfr: body_col = (200, 210, 225) # Custom blue-ish
+    
+    style = rocket.vehicle_data.get("render_style", {}) or {}
+    style_key = (
+        bool(style.get("grid_fins", False)),
+        bool(style.get("landing_legs", False)),
+        bool(style.get("interstage_band", False)),
+        bool(style.get("side_boosters", False)),
+    )
+    key = (v_id, core_h_px, core_w_px, stage_idx, bool(rocket.fairing_attached), ec, is_heavy_f, style_key)
     spr = cache.get(key)
     if spr is None:
-        spr = render_rocket_sprite(core_h_px, core_w_px, stage, rocket.fairing_attached)
+        spr = render_rocket_sprite(core_h_px, core_w_px, stage_idx, rocket.fairing_attached, engine_count=ec, body_color=body_col, is_heavy_f=is_heavy_f, style=style)
         cache[key] = spr
 
     rot_deg = math.degrees(pitch - math.pi / 2.0)
@@ -1296,6 +1530,28 @@ def draw_hud(surface, font, font_lg, world, phase, vehicle_name, orbit_id):
     pygame.draw.rect(surface, C_DASH_LINE, (WIDTH - 120, HEIGHT - 36, 110, 28), 1, border_radius=4)
     surface.blit(font.render("R - New Mission", True, C_TEXT), (WIDTH - 115, HEIGHT - 30))
 
+def draw_failure_screen(surface, font_lg, font_sm, title, details):
+    surface.fill((6, 8, 14))
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 160))
+    surface.blit(overlay, (0, 0))
+
+    panel_w = 860
+    panel_h = 260
+    px = WIDTH // 2 - panel_w // 2
+    py = HEIGHT // 2 - panel_h // 2
+    pygame.draw.rect(surface, (12, 16, 24), (px, py, panel_w, panel_h), border_radius=10)
+    pygame.draw.rect(surface, (255, 70, 60), (px, py, panel_w, panel_h), 2, border_radius=10)
+
+    t = font_lg.render(title, True, (255, 70, 60))
+    surface.blit(t, (px + 24, py + 22))
+
+    d = font_sm.render(details, True, (210, 215, 225))
+    surface.blit(d, (px + 24, py + 62))
+
+    hint = font_sm.render("Press R to start a new mission  |  Press ESC to quit", True, (140, 150, 165))
+    surface.blit(hint, (px + 24, py + panel_h - 44))
+
 
 # ── Main ─────────────────────────────────────────────────
 def run_app():
@@ -1365,6 +1621,8 @@ def run_app():
     prev_phase = world.phase
     deploy_state = {"active": False, "t": 0.0}
     prev_debris_len = 0
+    fail_state = {"active": False, "title": "", "details": ""}
+    explosion_state = {"active": False, "t": 0.0, "x": 0.0, "y": 0.0}
 
     while running:
         dt = clock.tick(FPS) / 1000.0
@@ -1375,6 +1633,20 @@ def run_app():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key == pygame.K_r and (fail_state["active"] or explosion_state["active"]):
+                    vid, oid = do_selection()
+                    world    = init_world(vid, oid)
+                    graphs   = make_graphs()
+                    traj     = make_traj(oid)
+                    lv = 0; cam_mode = 0
+                    manual_pitch = 0.0; manual_throttle = 1.0
+                    zoom_override = None
+                    vehicle_name = VEHICLES[vid]["name"]
+                    prev_phase = world.phase
+                    deploy_state = {"active": False, "t": 0.0}
+                    prev_debris_len = 0
+                    fail_state = {"active": False, "title": "", "details": ""}
+                    explosion_state = {"active": False, "t": 0.0, "x": 0.0, "y": 0.0}
                 elif event.key == pygame.K_SPACE:
                     if world.phase == FlightPhase.PRELAUNCH:
                         world.start()
@@ -1395,12 +1667,41 @@ def run_app():
                     manual_pitch = 0.0; manual_throttle = 1.0
                     zoom_override = None
                     vehicle_name = VEHICLES[vid]["name"]
+                    prev_phase = world.phase
+                    deploy_state = {"active": False, "t": 0.0}
+                    prev_debris_len = 0
+                    fail_state = {"active": False, "title": "", "details": ""}
+                    explosion_state = {"active": False, "t": 0.0, "x": 0.0, "y": 0.0}
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 4:
                     zoom_override = (zoom_override or 1.0) * 1.3
                 elif event.button == 5:
                     zoom_override = max((zoom_override or 1.0) / 1.3, 0.0001)
+
+        if fail_state["active"]:
+            draw_failure_screen(screen, font_lg, font_sm, fail_state["title"], fail_state["details"])
+            pygame.display.flip()
+            continue
+
+        if explosion_state["active"]:
+            explosion_state["t"] += dt
+            update_particles(particles, dt)
+            cam_x, cam_y = 0, EARTH_RADIUS + 35
+            zoom = 4.5
+            screen.blit(sky_cache[0], (VIEW_X, 0))
+            draw_ground_and_pad(screen, cam_x, cam_y, zoom)
+            draw_clouds_simple(screen, cam_x, cam_y, zoom, clouds)
+            draw_particles(screen, fx_surf, particles, cam_x, cam_y, zoom)
+            pygame.display.flip()
+            if explosion_state["t"] >= 2.4:
+                explosion_state["active"] = False
+                fail_state = {
+                    "active": True,
+                    "title": "MISSION FAILURE — LIFTOFF EXPLOSION",
+                    "details": "Insufficient thrust to lift off. Vehicle exploded on the pad.",
+                }
+            continue
 
         # Continuous keys
         keys = pygame.key.get_pressed()
@@ -1417,6 +1718,56 @@ def run_app():
         rocket = world.rocket
         alt    = rocket.get_altitude()
         vel    = rocket.get_velocity_mag()
+
+        if (
+            world.phase != FlightPhase.PRELAUNCH
+            and (not explosion_state["active"])
+            and world.time_elapsed > 1.6
+            and world.time_elapsed < 20.0
+        ):
+            m = rocket.get_total_mass()
+            g0 = 9.80665
+            twr = world.last_thrust_n / (m * g0) if m > 0 else 0.0
+            if alt < 15.0 and (rocket.vy < -3.0 or twr < 0.98):
+                explosion_state = {"active": True, "t": 0.0, "x": rocket.x, "y": rocket.y}
+                spawn_explosion(particles, rocket.x, rocket.y, intensity=1.0)
+                continue
+
+        r = math.hypot(rocket.x, rocket.y)
+        if r < EARTH_RADIUS * 0.98:
+            fail_state = {
+                "active": True,
+                "title": "MISSION FAILURE — VEHICLE LOST",
+                "details": "Rocket impacted Earth. Vehicle has been destroyed.",
+            }
+        elif r > MOON_DISTANCE * 1.5:
+            fail_state = {
+                "active": True,
+                "title": "MISSION FAILURE — LOST IN SPACE",
+                "details": "Trajectory exceeded tracking range. Rocket failed to stay in orbit and has been lost in space.",
+            }
+        elif world.phase == FlightPhase.SECO:
+            mu = G * EARTH_MASS
+            eps = 0.5 * vel * vel - mu / r if r > 0 else 0.0
+            h = rocket.x * rocket.vy - rocket.y * rocket.vx
+            if mu > 0 and r > 0:
+                e = math.sqrt(max(0.0, 1.0 + (2.0 * eps * (h * h)) / (mu * mu)))
+                if eps < 0:
+                    a = -mu / (2.0 * eps) if eps != 0 else r
+                    peri_alt = a * (1.0 - e) - EARTH_RADIUS
+                    if peri_alt < 0 and world.time_elapsed > 30.0:
+                        fail_state = {
+                            "active": True,
+                            "title": "MISSION FAILURE — UNSTABLE ORBIT",
+                            "details": "Periapsis intersects Earth. Rocket failed to stay in orbit and will re-enter.",
+                        }
+                else:
+                    if r > EARTH_RADIUS + 5_000_000.0 and world.time_elapsed > 30.0:
+                        fail_state = {
+                            "active": True,
+                            "title": "MISSION FAILURE — ESCAPE TRAJECTORY",
+                            "details": "Specific orbital energy is positive (escape). Rocket failed to stay in orbit and has been lost in space.",
+                        }
 
         if prev_phase != world.phase:
             if world.phase == FlightPhase.SECO:
@@ -1464,12 +1815,20 @@ def run_app():
             elif alt < 5000:
                 cam_x = rocket.x; cam_y = rocket.y
                 base_zoom = max(1.0, 4.5 - alt / 2000.0)
-            else:
+            elif alt < 60000:
                 cam_x = rocket.x; cam_y = rocket.y
                 base_zoom = max(0.08, 1.0 - alt / 100000.0)
+            else:
+                cam_x = rocket.x; cam_y = rocket.y
+                t = clamp((alt - 60000.0) / 240000.0, 0.0, 1.0)
+                base_zoom = (1.0 - t) * 0.00035 + t * 0.00005
         elif cam_mode == 1:
             cam_x = rocket.x; cam_y = rocket.y
-            base_zoom = max(0.005, 0.3 - alt / 500000.0)
+            if alt < 60000:
+                base_zoom = max(0.02, 0.18 - alt / 450000.0)
+            else:
+                t = clamp((alt - 60000.0) / 240000.0, 0.0, 1.0)
+                base_zoom = (1.0 - t) * 0.00020 + t * 0.00003
         elif cam_mode == 2:
             cam_x = rocket.x; cam_y = rocket.y
             base_zoom = max(0.00005, 0.0005 - alt / 100000000.0)

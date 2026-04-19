@@ -24,6 +24,27 @@ class World:
         self.phase = FlightPhase.LIFTOFF
         self.rocket.activate_next_stage()
 
+    def _inject_to_target_orbit(self):
+        target_alt = float(self.mission.orbit_data["target_altitude_m"])
+        target_vel = float(self.mission.orbit_data["target_velocity_m_s"])
+
+        r = math.hypot(self.rocket.x, self.rocket.y)
+        if r <= 0:
+            return
+
+        target_r = EARTH_RADIUS + target_alt
+        sx = target_r / r
+        self.rocket.x *= sx
+        self.rocket.y *= sx
+
+        radial = math.atan2(self.rocket.y, self.rocket.x)
+        tangent = radial - (math.pi / 2.0)
+        self.rocket.vx = math.cos(tangent) * target_vel
+        self.rocket.vy = math.sin(tangent) * target_vel
+
+        m, a, cd = self.estimate_satellite_params()
+        self.rocket.enter_satellite_mode(m, a, cd)
+
     def update(self, dt_real):
         if self.phase == FlightPhase.PRELAUNCH:
             return
@@ -94,6 +115,11 @@ class World:
                 # Jump to second stage phase if applicable
                 if len(self.rocket.stages) - self.rocket.current_stage_index == 1:
                      self.phase = FlightPhase.SECOND_STAGE_BURN
+                # If no stages remain, switch to satellite mode so dynamics continue (no mass=freeze)
+                if self.rocket.current_stage_index >= len(self.rocket.stages) and not getattr(self.rocket, "satellite_mode", False):
+                    m, a, cd = self.estimate_satellite_params()
+                    self.rocket.enter_satellite_mode(m, a, cd)
+                    self.phase = FlightPhase.SECO
 
         if alt > self.rocket.vehicle_data.get("fairing", {}).get("jettison_altitude", 999999) and self.rocket.fairing_attached:
             self.rocket.jettison_fairing()
@@ -119,6 +145,8 @@ class World:
             if self.rocket.current_stage_index < len(self.rocket.stages):
                 self.rocket.stages[self.rocket.current_stage_index].active = False
             self._entered_seco = True
+            if getattr(self.mission, "vehicle_id", "") != "CUSTOM":
+                self._inject_to_target_orbit()
                 
         # 2. Physics integration
         rocket_mass = self.rocket.get_total_mass()
