@@ -10,6 +10,7 @@ import sys
 
 from mission.vehicle_database import VEHICLES
 from mission.orbit_targets import ORBITS
+from mission.parts_database import ENGINES, FUEL_TANKS, FAIRINGS
 
 # ── Palette ──────────────────────────────────────────────
 BG          = (8, 12, 20)
@@ -69,102 +70,289 @@ ORBIT_COLORS = {
 
 
 class CustomRocketBuilder:
-    def __init__(self, screen, font_body, font_head, font_small):
+    def __init__(self, screen, font_body, font_head, font_small, font_tiny):
         self.screen = screen
         self.W, self.H = screen.get_size()
         self.f_body = font_body
         self.f_head = font_head
         self.f_small = font_small
+        self.f_tiny = font_tiny
         self.f_title = pygame.font.SysFont("Menlo", 24, bold=True)
+        self.f_huge = pygame.font.SysFont("Menlo", 40, bold=True)
 
         self.custom_data = VEHICLES["CUSTOM"]
+        
+        # Available parts lists
+        self.engine_ids = list(ENGINES.keys())
+        self.tank_ids = list(FUEL_TANKS.keys())
+        self.fairing_ids = list(FAIRINGS.keys())
+
+        # Current selections
+        self.sel_parts = {
+            "s1_tank": 2, # LARGE
+            "s1_engine": 1, # RD-180
+            "s1_engine_count": 1,
+            "s2_tank": 1, # MEDIUM
+            "s2_engine": 5, # MERLIN_VAC
+            "fairing": 1, # STANDARD
+        }
+
         self.fields = [
-            {"label": "Rocket Name", "key": "name", "val": str(self.custom_data["name"])},
-            # Stage 1
-            {"label": "S1 Dry Mass (kg)", "key": "dry_mass", "stage": 0, "val": str(self.custom_data["stages"][0]["dry_mass"])},
-            {"label": "S1 Fuel Mass (kg)", "key": "propellant_mass", "stage": 0, "val": str(self.custom_data["stages"][0]["propellant_mass"])},
-            {"label": "S1 Thrust SL (N)", "key": "thrust_sl", "stage": 0, "val": str(self.custom_data["stages"][0]["thrust_sl"])},
-            {"label": "S1 Burn Time (s)", "key": "burn_time", "stage": 0, "val": str(self.custom_data["stages"][0]["burn_time"])},
-            # Stage 2
-            {"label": "S2 Dry Mass (kg)", "key": "dry_mass", "stage": 1, "val": str(self.custom_data["stages"][1]["dry_mass"])},
-            {"label": "S2 Fuel Mass (kg)", "key": "propellant_mass", "stage": 1, "val": str(self.custom_data["stages"][1]["propellant_mass"])},
-            {"label": "S2 Thrust Vac (N)", "key": "thrust_vac", "stage": 1, "val": str(self.custom_data["stages"][1]["thrust_vac"])},
-            {"label": "S2 Burn Time (s)", "key": "burn_time", "stage": 1, "val": str(self.custom_data["stages"][1]["burn_time"])},
-            # General
-            {"label": "Fairing Mass (kg)", "key": "mass", "parent": "fairing", "val": str(self.custom_data["fairing"]["mass"])},
-            {"label": "Drag Coeff (Cd)", "key": "drag_coefficient", "val": str(self.custom_data["drag_coefficient"])},
-            {"label": "Rocket Area (m2)", "key": "cross_sectional_area", "val": str(self.custom_data["cross_sectional_area"])},
+            {"label": "Rocket Name", "key": "name", "type": "text", "val": str(self.custom_data["name"])},
+            {"label": "S1 Fuel Tank", "key": "s1_tank", "type": "part", "options": self.tank_ids, "db": FUEL_TANKS},
+            {"label": "S1 Engine", "key": "s1_engine", "type": "part", "options": self.engine_ids, "db": ENGINES},
+            {"label": "S1 Engine Count", "key": "s1_engine_count", "type": "num", "val": "1"},
+            {"label": "S2 Fuel Tank", "key": "s2_tank", "type": "part", "options": self.tank_ids, "db": FUEL_TANKS},
+            {"label": "S2 Engine", "key": "s2_engine", "type": "part", "options": self.engine_ids, "db": ENGINES},
+            {"label": "Fairing Type", "key": "fairing", "type": "part", "options": self.fairing_ids, "db": FAIRINGS},
+            {"label": "Drag Coeff (Cd)", "key": "drag_coefficient", "type": "num", "val": str(self.custom_data["drag_coefficient"])},
+            {"label": "Rocket Area (m2)", "key": "cross_sectional_area", "type": "num", "val": str(self.custom_data["cross_sectional_area"])},
         ]
+        
         self.active_field = 0
         self.rects = []
+        self._update_stats()
+
+    def _update_stats(self):
+        """Calculate dry mass, propellant mass, thrust, and delta-v based on selected parts."""
+        # S1
+        t1 = FUEL_TANKS[self.tank_ids[self.sel_parts["s1_tank"]]]
+        e1 = ENGINES[self.engine_ids[self.sel_parts["s1_engine"]]]
+        ec1 = int(self.fields[3]["val"]) if self.fields[3]["val"].isdigit() else 1
+        
+        s1_dry = t1["dry_mass"] + (e1["mass"] * ec1)
+        s1_fuel = t1["propellant_mass"]
+        s1_t_sl = e1["thrust_sl"] * ec1
+        s1_t_vac = e1["thrust_vac"] * ec1
+        s1_isp = e1["isp_vac"]
+        s1_power = e1.get("power_draw_kw", 0) * ec1
+        s1_batt = t1.get("battery_capacity_kwh", 0)
+        
+        # S2
+        t2 = FUEL_TANKS[self.tank_ids[self.sel_parts["s2_tank"]]]
+        e2 = ENGINES[self.engine_ids[self.sel_parts["s2_engine"]]]
+        
+        s2_dry = t2["dry_mass"] + e2["mass"]
+        s2_fuel = t2["propellant_mass"]
+        s2_t_vac = e2["thrust_vac"]
+        s2_isp = e2["isp_vac"]
+        s2_power = e2.get("power_draw_kw", 0)
+        s2_batt = t2.get("battery_capacity_kwh", 0)
+
+        # Fairing
+        f = FAIRINGS[self.fairing_ids[self.sel_parts["fairing"]]]
+        
+        # Total Stats
+        m_payload = 1000 # Assume 1t payload for dV calc
+        m_f = f["mass"]
+        
+        # dV = Isp * g0 * ln(m0/m1)
+        g0 = 9.80665
+        
+        # Stage 2 dV
+        m0_2 = s2_dry + s2_fuel + m_payload
+        m1_2 = s2_dry + m_payload
+        dv2 = s2_isp * g0 * math.log(m0_2 / m1_2) if m1_2 > 0 and s2_isp > 0 else 0
+        
+        # Stage 1 dV (including S2 mass + fairing as payload)
+        m_s2_total = s2_dry + s2_fuel + m_payload + m_f
+        m0_1 = s1_dry + s1_fuel + m_s2_total
+        m1_1 = s1_dry + m_s2_total
+        dv1 = s1_isp * g0 * math.log(m0_1 / m1_1) if m1_1 > 0 and s1_isp > 0 else 0
+        
+        self.total_dv = dv1 + dv2
+        self.total_mass = m0_1
+        self.s1_twr = s1_t_sl / (self.total_mass * g0) if self.total_mass > 0 else 0
+        
+        # Power / Electricity
+        self.total_power_draw = s1_power + s2_power
+        self.total_batt = s1_batt + s2_batt
+
+        # Update custom_data for simulation
+        self.custom_data["stages"][0]["dry_mass"] = s1_dry
+        self.custom_data["stages"][0]["propellant_mass"] = s1_fuel
+        self.custom_data["stages"][0]["thrust_sl"] = s1_t_sl
+        self.custom_data["stages"][0]["thrust_vac"] = s1_t_vac
+        self.custom_data["stages"][0]["burn_time"] = s1_fuel / (s1_t_vac / (s1_isp * g0)) if s1_isp > 0 and s1_t_vac > 0 else 150
+        
+        self.custom_data["stages"][1]["dry_mass"] = s2_dry
+        self.custom_data["stages"][1]["propellant_mass"] = s2_fuel
+        self.custom_data["stages"][1]["thrust_sl"] = 0
+        self.custom_data["stages"][1]["thrust_vac"] = s2_t_vac
+        self.custom_data["stages"][1]["burn_time"] = s2_fuel / (s2_t_vac / (s2_isp * g0)) if s2_isp > 0 and s2_t_vac > 0 else 300
+
+        self.custom_data["fairing"]["mass"] = f["mass"]
+        self.custom_data["fairing"]["jettison_altitude"] = f["jettison_altitude"]
+        
+        self.custom_data["drag_coefficient"] = float(self.fields[7]["val"]) if self.fields[7]["val"].replace('.','',1).isdigit() else 0.4
+        self.custom_data["cross_sectional_area"] = float(self.fields[8]["val"]) if self.fields[8]["val"].replace('.','',1).isdigit() else 10.0
+        self.custom_data["name"] = self.fields[0]["val"]
+
+    def _draw_rocket_preview(self, rect):
+        """Draw a simple 2D visualization of the rocket based on selected parts."""
+        cx, cy = rect.centerx, rect.bottom - 40
+        
+        # Scaling
+        s1_h = 140 if "LARGE" in self.tank_ids[self.sel_parts["s1_tank"]] else 100 if "MEDIUM" in self.tank_ids[self.sel_parts["s1_tank"]] else 60
+        s2_h = 80 if "LARGE" in self.tank_ids[self.sel_parts["s2_tank"]] else 60 if "MEDIUM" in self.tank_ids[self.sel_parts["s2_tank"]] else 40
+        w = 40 if "LARGE" in self.tank_ids[self.sel_parts["s1_tank"]] else 30
+        
+        # Stage 1
+        s1_rect = pygame.Rect(cx - w // 2, cy - s1_h, w, s1_h)
+        draw_rounded_rect(self.screen, (200, 200, 210), s1_rect, radius=2, border_color=(100, 100, 110), border_w=2)
+        
+        # Stage 2
+        s2_rect = pygame.Rect(cx - w // 2, cy - s1_h - s2_h, w, s2_h)
+        draw_rounded_rect(self.screen, (180, 180, 190), s2_rect, radius=2, border_color=(100, 100, 110), border_w=2)
+        
+        # Fairing (Nose cone)
+        f_h = 50
+        pts = [(cx - w // 2, cy - s1_h - s2_h), (cx + w // 2, cy - s1_h - s2_h), (cx, cy - s1_h - s2_h - f_h)]
+        pygame.draw.polygon(self.screen, (220, 220, 230), pts)
+        pygame.draw.polygon(self.screen, (100, 100, 110), pts, 2)
+        
+        # Engines
+        ec1 = int(self.fields[3]["val"]) if self.fields[3]["val"].isdigit() else 1
+        for i in range(min(ec1, 9)):
+            ex = cx - (min(ec1, 3) * 8) // 2 + (i % 3) * 8
+            ey = cy + (i // 3) * 4
+            pygame.draw.rect(self.screen, (60, 60, 70), (ex, ey, 6, 8))
+
+        # Labels
+        self.screen.blit(self.f_tiny.render("FAIRING", True, TEXT_DIM), (cx + w // 2 + 10, cy - s1_h - s2_h - f_h // 2))
+        self.screen.blit(self.f_tiny.render("STAGE 2", True, TEXT_DIM), (cx + w // 2 + 10, cy - s1_h - s2_h // 2))
+        self.screen.blit(self.f_tiny.render("STAGE 1", True, TEXT_DIM), (cx + w // 2 + 10, cy - s1_h // 2))
 
     def draw(self):
         self.screen.fill(BG)
         # Header
-        title = "R O C K E T   C O N F I G U R A T O R"
+        title = "◈   R O C K E T   A S S E M B L Y   H A N G A R   ◈"
         t_surf = self.f_title.render(title, True, ACCENT_CYAN)
-        self.screen.blit(t_surf, (self.W // 2 - t_surf.get_width() // 2, 40))
+        self.screen.blit(t_surf, (self.W // 2 - t_surf.get_width() // 2, 30))
 
-        # Instructions
-        instr = "Use UP/DOWN to select field, type numbers, ENTER to save, ESC to cancel"
-        i_surf = self.f_small.render(instr, True, TEXT_DIM)
-        self.screen.blit(i_surf, (self.W // 2 - i_surf.get_width() // 2, 75))
+        # Left Panel: Physics Dashboard
+        lx = 50
+        ly = 110
+        draw_rounded_rect(self.screen, PANEL_DARK, (lx - 10, ly - 10, 320, self.H - 220), radius=10, border_color=BORDER, border_w=1)
+        self.screen.blit(self.f_head.render("PHYSICS DASHBOARD", True, ACCENT_GOLD), (lx, ly)); ly += 35
+        
+        s1 = self.custom_data["stages"][0]
+        s2 = self.custom_data["stages"][1]
+        
+        physics_stats = [
+            ("Total Mass", f"{self.total_mass:,.0f} kg", TEXT_HI),
+            ("Liftoff TWR", f"{self.s1_twr:.2f}", ACCENT_GRN if self.s1_twr > 1.2 else ACCENT_RED),
+            ("Total Delta-V", f"{self.total_dv:,.0f} m/s", ACCENT_CYAN),
+            ("", "", TEXT_DIM),
+            ("S1 Propellant", f"{s1['propellant_mass']:,.0f} kg", TEXT_HI),
+            ("S1 Thrust (SL)", f"{s1['thrust_sl']/1000:,.0f} kN", TEXT_HI),
+            ("S1 Burn Time", f"{s1['burn_time']:.1f} s", TEXT_HI),
+            ("", "", TEXT_DIM),
+            ("S2 Propellant", f"{s2['propellant_mass']:,.0f} kg", TEXT_HI),
+            ("S2 Thrust (Vac)", f"{s2['thrust_vac']/1000:,.0f} kN", TEXT_HI),
+            ("S2 Burn Time", f"{s2['burn_time']:.1f} s", TEXT_HI),
+            ("", "", TEXT_DIM),
+            ("Total Power", f"{self.total_power_draw:.1f} kW", (200, 200, 255)),
+            ("Batt Capacity", f"{self.total_batt:.1f} kWh", (200, 200, 255)),
+        ]
+        
+        for label, val, col in physics_stats:
+            if label:
+                self.screen.blit(self.f_small.render(label, True, TEXT_DIM), (lx, ly))
+                self.screen.blit(self.f_body.render(val, True, col), (lx + 140, ly))
+            ly += 22
 
+        # Center: Visualization
+        preview_rect = pygame.Rect(self.W // 2 - 150, 100, 300, self.H - 200)
+        self._draw_rocket_preview(preview_rect)
+
+        # Right Panel: Components
+        rx = self.W - 450
+        ry = 110
+        draw_rounded_rect(self.screen, PANEL_DARK, (rx - 10, ry - 10, 410, self.H - 220), radius=10, border_color=BORDER, border_w=1)
+        self.screen.blit(self.f_head.render("VEHICLE COMPONENTS", True, ACCENT_CYAN), (rx, ry)); ry += 35
+        
         self.rects = []
-        x_start = self.W // 2 - 200
-        y_start = 130
-        gap = 45
-
+        field_gap = 42
         for i, field in enumerate(self.fields):
-            y = y_start + i * gap
-            label = self.f_body.render(field["label"], True, TEXT_HI)
-            self.screen.blit(label, (x_start, y))
+            y = ry + i * field_gap
+            label_surf = self.f_small.render(field["label"], True, TEXT_DIM)
+            self.screen.blit(label_surf, (rx, y))
 
-            # Input box
-            rect = pygame.Rect(x_start + 180, y - 5, 200, 30)
+            # Input/Select box
+            rect = pygame.Rect(rx + 130, y - 5, 250, 32)
             self.rects.append(rect)
             
             is_active = (i == self.active_field)
-            bg_col = (20, 35, 60) if is_active else PANEL_DARK
+            bg_col = (20, 35, 60) if is_active else (14, 20, 32)
             bord_col = BORDER_SEL if is_active else BORDER
             
             draw_rounded_rect(self.screen, bg_col, rect, radius=4, border_color=bord_col, border_w=2 if is_active else 1)
             
-            val_surf = self.f_body.render(field["val"], True, (255, 255, 255) if is_active else TEXT_DIM)
-            self.screen.blit(val_surf, (rect.x + 8, rect.y + 5))
+            if field["type"] == "part":
+                sel_idx = self.sel_parts[field["key"]]
+                part_name = field["db"][field["options"][sel_idx]]["name"]
+                # Trim long names
+                if len(part_name) > 22: part_name = part_name[:20] + ".."
+                val_surf = self.f_body.render(f"< {part_name} >", True, (255, 255, 255) if is_active else TEXT_DIM)
+            else:
+                val_surf = self.f_body.render(field["val"], True, (255, 255, 255) if is_active else TEXT_DIM)
+            
+            self.screen.blit(val_surf, (rect.x + 8, rect.y + 6))
 
-            if is_active and (pygame.time.get_ticks() // 500) % 2 == 0:
-                # Cursor
+            if is_active and field["type"] != "part" and (pygame.time.get_ticks() // 500) % 2 == 0:
                 cx = rect.x + 8 + val_surf.get_width()
-                pygame.draw.line(self.screen, ACCENT_CYAN, (cx, rect.y + 5), (cx, rect.y + 25), 2)
+                pygame.draw.line(self.screen, ACCENT_CYAN, (cx, rect.y + 6), (cx, rect.y + 26), 2)
 
         # Bottom buttons hint
         bx = self.W // 2
         by = self.H - 60
-        self.screen.blit(self.f_head.render("[ ENTER ] SAVE CONFIG", True, ACCENT_GRN), (bx - 220, by))
-        self.screen.blit(self.f_head.render("[ ESC ] CANCEL", True, ACCENT_RED), (bx + 40, by))
+        self.screen.blit(self.f_head.render("[ ENTER ] FINALIZE ASSEMBLY", True, ACCENT_GRN), (bx - 260, by))
+        self.screen.blit(self.f_head.render("[ ESC ] DISCARD CHANGES", True, ACCENT_RED), (bx + 60, by))
 
         pygame.display.flip()
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN:
+            field = self.fields[self.active_field]
+            
             if event.key == pygame.K_ESCAPE:
                 return "CANCEL"
             elif event.key == pygame.K_RETURN:
-                self.save()
+                self._update_stats()
+                VEHICLES["CUSTOM"] = self.custom_data
                 return "SAVE"
             elif event.key == pygame.K_UP:
                 self.active_field = (self.active_field - 1) % len(self.fields)
             elif event.key == pygame.K_DOWN:
                 self.active_field = (self.active_field + 1) % len(self.fields)
+            
+            # Left/Right for part selection
+            elif event.key == pygame.K_LEFT:
+                if field["type"] == "part":
+                    opt_count = len(field["options"])
+                    self.sel_parts[field["key"]] = (self.sel_parts[field["key"]] - 1) % opt_count
+                    self._update_stats()
+            elif event.key == pygame.K_RIGHT:
+                if field["type"] == "part":
+                    opt_count = len(field["options"])
+                    self.sel_parts[field["key"]] = (self.sel_parts[field["key"]] + 1) % opt_count
+                    self._update_stats()
+            
+            # Typing for text/num fields
             elif event.key == pygame.K_BACKSPACE:
-                self.fields[self.active_field]["val"] = self.fields[self.active_field]["val"][:-1]
+                if field["type"] != "part":
+                    field["val"] = field["val"][:-1]
+                    self._update_stats()
             else:
-                if self.fields[self.active_field]["key"] == "name":
+                if field["type"] == "text":
                     if event.unicode.isprintable():
-                        self.fields[self.active_field]["val"] += event.unicode
-                elif event.unicode in "0123456789.":
-                    self.fields[self.active_field]["val"] += event.unicode
+                        field["val"] += event.unicode
+                        self._update_stats()
+                elif field["type"] == "num":
+                    if event.unicode in "0123456789.":
+                        field["val"] += event.unicode
+                        self._update_stats()
         
         if event.type == pygame.MOUSEBUTTONDOWN:
             for i, rect in enumerate(self.rects):
@@ -172,32 +360,6 @@ class CustomRocketBuilder:
                     self.active_field = i
 
         return None
-
-    def save(self):
-        for field in self.fields:
-            if field["key"] == "name":
-                self.custom_data["name"] = field["val"]
-                continue
-
-            try:
-                val = float(field["val"])
-            except ValueError:
-                continue
-
-            if "stage" in field:
-                s_idx = field["stage"]
-                self.custom_data["stages"][s_idx][field["key"]] = val
-                # Sync thrusts for S1 if it's thrust_sl
-                if field["key"] == "thrust_sl" and s_idx == 0:
-                    self.custom_data["stages"][0]["thrust_vac"] = val * 1.1 # Approx vac thrust
-            elif "parent" in field:
-                self.custom_data[field["parent"]][field["key"]] = val
-            else:
-                self.custom_data[field["key"]] = val
-        
-        # Update name/desc to reflect custom status
-        self.custom_data["name"] = "Custom Rocket (Modified)"
-        VEHICLES["CUSTOM"] = self.custom_data
 
 class VehicleSelectScreen:
     def __init__(self, screen: pygame.Surface):
@@ -548,7 +710,7 @@ def run_selection(screen, clock, fps=60) -> tuple:
             for event in pygame.event.get():
                 result = sel.handle_event(event)
                 if result == "BUILD":
-                    builder = CustomRocketBuilder(screen, sel.f_body, sel.f_head, sel.f_small)
+                    builder = CustomRocketBuilder(screen, sel.f_body, sel.f_head, sel.f_small, sel.f_tiny)
                 elif result is not None:
                     return result
             sel.draw()
