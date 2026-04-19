@@ -189,6 +189,11 @@ class CustomRocketBuilder:
         self.custom_data["drag_coefficient"] = float(self.fields[7]["val"]) if self.fields[7]["val"].replace('.','',1).isdigit() else 0.4
         self.custom_data["cross_sectional_area"] = float(self.fields[8]["val"]) if self.fields[8]["val"].replace('.','',1).isdigit() else 10.0
         self.custom_data["name"] = self.fields[0]["val"]
+        self.custom_data["analysis"] = {
+            "twr": float(self.s1_twr),
+            "delta_v_m_s": float(self.total_dv),
+            "total_mass_kg": float(self.total_mass),
+        }
 
     def _draw_rocket_preview(self, rect):
         """Draw a simple 2D visualization of the rocket based on selected parts."""
@@ -386,6 +391,12 @@ class VehicleSelectScreen:
 
         self.hover_launch = False
         self.anim_t = 0.0       # for pulsing glow
+        self.confirm_open = False
+        self.confirm_title = ""
+        self.confirm_body = ""
+        self.confirm_launch = None
+        self.confirm_btn_go = None
+        self.confirm_btn_back = None
 
         # Layout constants
         self.CARD_COLS  = 3
@@ -625,12 +636,123 @@ class VehicleSelectScreen:
             self._draw_orbit_panel(i, oid)
 
         self._draw_launch_button()
+        if self.confirm_open:
+            self._draw_confirm_overlay()
         pygame.display.flip()
+
+    def _custom_launch_warning(self, veh):
+        stages = veh.get("stages", [])
+        if not stages:
+            return "No stages defined."
+
+        g0 = 9.80665
+        s1 = stages[0]
+        thrust_sl = float(s1.get("thrust_sl", 0.0) or 0.0)
+        if thrust_sl <= 0:
+            return "Stage 1 sea-level thrust is 0 N."
+
+        total_mass = 0.0
+        for st in stages:
+            total_mass += float(st.get("dry_mass", 0.0) or 0.0) + float(st.get("propellant_mass", 0.0) or 0.0)
+        total_mass += float(veh.get("fairing", {}).get("mass", 0.0) or 0.0)
+        if total_mass <= 0:
+            return "Total mass is 0 kg."
+
+        twr = thrust_sl / (total_mass * g0)
+        dv = float(veh.get("analysis", {}).get("delta_v_m_s", 0.0) or 0.0)
+
+        if twr < 1.0:
+            return f"Liftoff TWR is too low ({twr:.2f} < 1.00). Rocket will not lift off."
+        if twr < 1.15:
+            return f"Liftoff TWR is low ({twr:.2f}). Rocket may fail to lift off safely."
+        if dv > 0 and dv < 7500:
+            return f"Total Δv is low ({dv:,.0f} m/s). Rocket may fail to reach orbit."
+        return None
+
+    def _open_confirm(self, title, body, launch_tuple):
+        self.confirm_open = True
+        self.confirm_title = title
+        self.confirm_body = body
+        self.confirm_launch = launch_tuple
+        self.confirm_btn_go = None
+        self.confirm_btn_back = None
+
+    def _draw_confirm_overlay(self):
+        shade = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        shade.fill((0, 0, 0, 170))
+        self.screen.blit(shade, (0, 0))
+
+        w = 760
+        h = 260
+        x = self.W // 2 - w // 2
+        y = self.H // 2 - h // 2
+        panel = pygame.Rect(x, y, w, h)
+        draw_rounded_rect(self.screen, (12, 16, 24), panel, radius=12, border_color=ACCENT_GOLD, border_w=2)
+
+        t = self.f_head.render(self.confirm_title, True, ACCENT_GOLD)
+        self.screen.blit(t, (x + 22, y + 18))
+
+        body_lines = []
+        words = (self.confirm_body or "").split()
+        line = ""
+        for word in words:
+            if len(line) + len(word) + 1 <= 62:
+                line += (" " if line else "") + word
+            else:
+                body_lines.append(line)
+                line = word
+        if line:
+            body_lines.append(line)
+        by = y + 58
+        for ln in body_lines[:4]:
+            self.screen.blit(self.f_small.render(ln, True, TEXT_HI), (x + 22, by))
+            by += 18
+
+        hint = self.f_tiny.render("ENTER: launch anyway   |   ESC: go back", True, TEXT_DIM)
+        self.screen.blit(hint, (x + 22, y + h - 58))
+
+        btn_w = 250
+        btn_h = 44
+        btn_go = pygame.Rect(x + 22, y + h - 44 - 18, btn_w, btn_h)
+        btn_back = pygame.Rect(x + w - btn_w - 22, y + h - 44 - 18, btn_w, btn_h)
+        self.confirm_btn_go = btn_go
+        self.confirm_btn_back = btn_back
+
+        draw_rounded_rect(self.screen, (14, 55, 28), btn_go, radius=10, border_color=ACCENT_GRN, border_w=2)
+        draw_rounded_rect(self.screen, (45, 18, 18), btn_back, radius=10, border_color=ACCENT_RED, border_w=2)
+
+        go_lbl = self.f_btn.render("LAUNCH ANYWAY", True, ACCENT_GRN)
+        bk_lbl = self.f_btn.render("GO BACK", True, ACCENT_RED)
+        self.screen.blit(go_lbl, (btn_go.centerx - go_lbl.get_width() // 2, btn_go.centery - go_lbl.get_height() // 2))
+        self.screen.blit(bk_lbl, (btn_back.centerx - bk_lbl.get_width() // 2, btn_back.centery - bk_lbl.get_height() // 2))
 
     def handle_event(self, event):
         """Returns (vid, oid) if launch confirmed, else 'BUILD' if custom edit requested, else None."""
         if event.type == pygame.QUIT:
             pygame.quit(); sys.exit()
+
+        if self.confirm_open:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.confirm_open = False
+                    self.confirm_launch = None
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if self.confirm_launch is not None:
+                        out = self.confirm_launch
+                        self.confirm_open = False
+                        self.confirm_launch = None
+                        return out
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                if self.confirm_btn_go and self.confirm_btn_go.collidepoint(mx, my) and self.confirm_launch is not None:
+                    out = self.confirm_launch
+                    self.confirm_open = False
+                    self.confirm_launch = None
+                    return out
+                if self.confirm_btn_back and self.confirm_btn_back.collidepoint(mx, my):
+                    self.confirm_open = False
+                    self.confirm_launch = None
+            return None
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
@@ -684,7 +806,13 @@ class VehicleSelectScreen:
                 if candidate in self.orbit_ids:
                     oid = candidate
                     break
-        return (vid, oid)
+        launch_tuple = (vid, oid)
+        if vid == "CUSTOM":
+            warn = self._custom_launch_warning(veh)
+            if warn:
+                self._open_confirm("WARNING: CUSTOM ROCKET MAY FAIL", warn, launch_tuple)
+                return None
+        return launch_tuple
 
     def tick(self, dt):
         self.anim_t += dt
