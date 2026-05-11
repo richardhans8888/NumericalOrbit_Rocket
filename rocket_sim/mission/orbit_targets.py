@@ -3,16 +3,6 @@
 Target orbit definitions for satellite launch missions.
 Altitudes and velocities are approximate circular-orbit values.
 """
-from physics.constants import EARTH_RADIUS
-import math
-
-# Convenience: circular orbital velocity at radius r
-def _v_circ(alt_m):
-    G = 6.674e-11
-    M = 5.972e24
-    r = EARTH_RADIUS + alt_m
-    return math.sqrt(G * M / r)
-
 ORBITS = {
     "LEO": {
         "name": "Low Earth Orbit (LEO)",

@@ -18,7 +18,6 @@ class World:
         
         self.phase = FlightPhase.PRELAUNCH
         self.time_warp = 1.0
-        self._entered_seco = False
         
     def start(self):
         self.phase = FlightPhase.LIFTOFF
@@ -72,7 +71,10 @@ class World:
             # Very simplistic gravity turn that zeros out pitch as we approach target altitude
             # Starts aggressively pitching down above 15km
             if alt > 1000:
-                pitch_fraction = 1.0 - min((alt - 1000) / (target_alt * 0.9), 1.0)
+                if target_alt == 0:
+                    pitch_fraction = 0.0
+                else:
+                    pitch_fraction = 1.0 - min((alt - 1000) / (target_alt * 0.9), 1.0)
                 # Keep it strictly between pi/2 (up) and 0 (horizontal)
                 target_pitch = (math.pi / 2.0) * max(pitch_fraction, 0.0)
                 # Wait, if we pitch to 0, thrust is in +x. That is correct.
@@ -114,7 +116,7 @@ class World:
                 self.phase = FlightPhase.BOOSTER_BURNOUT
                 # Jump to second stage phase if applicable
                 if len(self.rocket.stages) - self.rocket.current_stage_index == 1:
-                     self.phase = FlightPhase.SECOND_STAGE_BURN
+                     self.phase = FlightPhase.UPPER_STAGE_BURN
                 # If no stages remain, switch to satellite mode so dynamics continue (no mass=freeze)
                 if self.rocket.current_stage_index >= len(self.rocket.stages) and not getattr(self.rocket, "satellite_mode", False):
                     m, a, cd = self.estimate_satellite_params()
@@ -144,7 +146,6 @@ class World:
             self.phase = FlightPhase.SECO
             if self.rocket.current_stage_index < len(self.rocket.stages):
                 self.rocket.stages[self.rocket.current_stage_index].active = False
-            self._entered_seco = True
             if getattr(self.mission, "vehicle_id", "") != "CUSTOM":
                 self._inject_to_target_orbit()
                 
@@ -205,6 +206,8 @@ class World:
                 
                 d["vx"], d["vy"] = update_velocity(d["vx"], d["vy"], gx + ax_drag, gy + ay_drag, dt)
                 d["x"], d["y"] = update_position(d["x"], d["y"], d["vx"], d["vy"], dt)
+
+        self.debris = [d for d in self.debris if (math.sqrt(d["x"]**2 + d["y"]**2) - EARTH_RADIUS) > 0]
 
     def estimate_satellite_params(self):
         oid = getattr(self.mission, "orbit_id", "LEO")
