@@ -33,6 +33,18 @@ def lerp_color(c1, c2, t):
     return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
 
 
+def clamp(v, lo, hi):
+    return lo if v < lo else hi if v > hi else v
+
+
+def scale_color(c, f):
+    return (
+        int(clamp(c[0] * f, 0, 255)),
+        int(clamp(c[1] * f, 0, 255)),
+        int(clamp(c[2] * f, 0, 255)),
+    )
+
+
 def draw_rounded_rect(surf, color, rect, radius=8, border_color=None, border_w=1):
     pygame.draw.rect(surf, color, rect, border_radius=radius)
     if border_color:
@@ -217,36 +229,84 @@ class CustomRocketBuilder:
         """Draw a simple 2D visualization of the rocket based on selected parts."""
         cx, cy = rect.centerx, rect.bottom - 100
         
+        # Part Data
+        t1 = FUEL_TANKS[self.tank_ids[self.sel_parts["s1_tank"]]]
+        e1 = ENGINES[self.engine_ids[self.sel_parts["s1_engine"]]]
+        t2 = FUEL_TANKS[self.tank_ids[self.sel_parts["s2_tank"]]]
+        e2 = ENGINES[self.engine_ids[self.sel_parts["s2_engine"]]]
+        fairing = FAIRINGS[self.fairing_ids[self.sel_parts["fairing"]]]
+
+        # Visual Material Colors
+        def get_tank_color(name):
+            name = name.upper()
+            if "KEROLOX" in name: return (230, 230, 235) # White
+            if "ALLOY" in name: return (160, 165, 175) # Metallic Grey
+            if "COMPOSITE" in name: return (45, 45, 50) # Dark Carbon
+            if "CRYOGENIC" in name: return (255, 150, 50) # Orange Foam
+            return (200, 200, 210)
+
+        c1 = get_tank_color(t1["name"])
+        c2 = get_tank_color(t2["name"])
+
         # Scaling
-        s1_h = 180 if "LARGE" in self.tank_ids[self.sel_parts["s1_tank"]] else 140 if "MEDIUM" in self.tank_ids[self.sel_parts["s1_tank"]] else 90
-        s2_h = 110 if "LARGE" in self.tank_ids[self.sel_parts["s2_tank"]] else 80 if "MEDIUM" in self.tank_ids[self.sel_parts["s2_tank"]] else 50
-        w = 46 if "LARGE" in self.tank_ids[self.sel_parts["s1_tank"]] else 34
+        s1_h = 180 if "LARGE" in t1["name"].upper() else 140 if "MEDIUM" in t1["name"].upper() else 90
+        s2_h = 110 if "LARGE" in t2["name"].upper() else 80 if "MEDIUM" in t2["name"].upper() else 50
+        w = 46 if "LARGE" in t1["name"].upper() else 34
         
         # Stage 1
         s1_rect = pygame.Rect(cx - w // 2, cy - s1_h, w, s1_h)
-        draw_rounded_rect(self.screen, (200, 200, 210), s1_rect, radius=2, border_color=(100, 100, 110), border_w=2)
+        draw_rounded_rect(self.screen, c1, s1_rect, radius=2, border_color=scale_color(c1, 0.5), border_w=2)
         
         # Stage 2
         s2_rect = pygame.Rect(cx - w // 2, cy - s1_h - s2_h, w, s2_h)
-        draw_rounded_rect(self.screen, (180, 180, 190), s2_rect, radius=2, border_color=(100, 100, 110), border_w=2)
+        draw_rounded_rect(self.screen, c2, s2_rect, radius=2, border_color=scale_color(c2, 0.5), border_w=2)
         
         # Fairing (Nose cone)
-        f_h = 60
-        pts = [(cx - w // 2, cy - s1_h - s2_h), (cx + w // 2, cy - s1_h - s2_h), (cx, cy - s1_h - s2_h - f_h)]
+        f_h = 60 if "HEAVY" in fairing["name"].upper() else 50
+        f_w = w + 10 if "HEAVY" in fairing["name"].upper() else w
+        pts = [(cx - f_w // 2, cy - s1_h - s2_h), (cx + f_w // 2, cy - s1_h - s2_h), (cx, cy - s1_h - s2_h - f_h)]
         pygame.draw.polygon(self.screen, (220, 220, 230), pts)
         pygame.draw.polygon(self.screen, (100, 100, 110), pts, 2)
         
-        # Engines
+        # Engine Visualization
         ec1 = int(self.fields[5]["val"]) if self.fields[5]["val"].isdigit() else 1
+        
+        # Engine size/shape based on type
+        def draw_engine_bell(ex, ey, e_data, is_vacuum=False):
+            e_name = e_data["name"].upper()
+            bw = 8; bh = 10
+            if "RD-180" in e_name: bw = 12; bh = 14
+            elif "RUTHERFORD" in e_name: bw = 6; bh = 7
+            elif "VULCAIN" in e_name: bw = 10; bh = 12
+            
+            if is_vacuum: bw *= 1.5; bh *= 1.2 # Vacuum engines have larger bells
+            
+            pygame.draw.polygon(self.screen, (50, 50, 55), [
+                (ex, ey), (ex + bw, ey), 
+                (ex + bw + 2, ey + bh), (ex - 2, ey + bh)
+            ])
+            pygame.draw.polygon(self.screen, (30, 30, 35), [
+                (ex, ey), (ex + bw, ey), 
+                (ex + bw + 2, ey + bh), (ex - 2, ey + bh)
+            ], 1)
+
+        # Draw S1 Engines
+        cols = 3
+        gap = 10
         for i in range(min(ec1, 9)):
-            ex = cx - (min(ec1, 3) * 10) // 2 + (i % 3) * 10
-            ey = cy + (i // 3) * 6
-            pygame.draw.rect(self.screen, (60, 60, 70), (ex, ey, 8, 10))
+            row = i // cols
+            col = i % cols
+            ex = cx - (min(ec1, cols) * gap) // 2 + col * gap - 4
+            ey = cy + row * 6
+            draw_engine_bell(ex, ey, e1)
+
+        # Draw S2 Engine (Internal/Hidden partially)
+        draw_engine_bell(cx - 6, cy - s1_h + 2, e2, is_vacuum=True)
 
         # Labels
-        self.screen.blit(self.f_tiny.render("FAIRING", True, TEXT_DIM), (cx + w // 2 + 10, cy - s1_h - s2_h - f_h // 2))
-        self.screen.blit(self.f_tiny.render("STAGE 2", True, TEXT_DIM), (cx + w // 2 + 10, cy - s1_h - s2_h // 2))
-        self.screen.blit(self.f_tiny.render("STAGE 1", True, TEXT_DIM), (cx + w // 2 + 10, cy - s1_h // 2))
+        self.screen.blit(self.f_tiny.render(f"FAIRING: {fairing['name']}", True, TEXT_DIM), (cx + w // 2 + 15, cy - s1_h - s2_h - f_h // 2))
+        self.screen.blit(self.f_tiny.render(f"S2: {t2['name']}", True, TEXT_DIM), (cx + w // 2 + 15, cy - s1_h - s2_h // 2))
+        self.screen.blit(self.f_tiny.render(f"S1: {t1['name']}", True, TEXT_DIM), (cx + w // 2 + 15, cy - s1_h // 2))
 
     def draw(self):
         self.screen.fill(BG)

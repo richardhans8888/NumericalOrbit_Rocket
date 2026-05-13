@@ -58,6 +58,7 @@ C_CYAN      = (0,   200, 255)
 C_YELLOW    = (255, 220, 40)
 C_MAGENTA   = (210, 60,  210)
 C_RED       = (255, 60,  60)
+ACCENT_GOLD = (255, 200, 60)
 C_OCEAN     = (20,  55,  100)
 C_LAND1     = (60,  130, 45)
 C_LAND2     = (90,  150, 60)
@@ -1486,28 +1487,56 @@ def draw_dashboard(surface, font, font_sm, font_tiny, rocket, world,
         ("Propulsion",  "GO" if stg < len(rocket.stages) and rocket.stages[stg].active else "COAST", C_GREEN_GO),
         ("ADCS",        "GO",  C_GREEN_GO),
         ("Thermal",     "GO",  C_GREEN_GO),
-        ("TT&C",        "GO",  C_GREEN_GO),
         ("Navigation",  "GO",  C_GREEN_GO),
-        ("Payload",     "STBY", C_YELLOW),
     ]
     for name, status, col in systems:
         surface.blit(font_tiny.render(name, True, (140, 150, 165)), (sx, sy))
         surface.blit(font_tiny.render(status, True, col), (sx + 78, sy))
-        sy += 16
+        sy += 15
 
-    sy += 6
+    sy += 10
     # Phase, time, warp
+    surface.blit(font_tiny.render("MISSION PHASE", True, (120, 130, 150)), (sx, sy)); sy += 12
+    surface.blit(font_sm.render(PHASE_NAMES.get(world.phase, "UNKNOWN"), True, C_YELLOW), (sx, sy)); sy += 18
+    
     orb_data  = ORBITS.get(orbit_id, {})
-    orb_color = orb_data.get("color", C_CYAN)
-    phase_str = PHASE_NAMES.get(world.phase, "?")
-    surface.blit(font_tiny.render("MISSION PHASE", True, (100, 110, 130)), (sx, sy)); sy += 14
-    surface.blit(font_sm.render(phase_str, True, C_YELLOW), (sx, sy)); sy += 18
+    surface.blit(font_tiny.render("TARGET ORBIT", True, (120, 130, 150)), (sx, sy)); sy += 12
+    surface.blit(font_sm.render(orb_data.get("name", "Unknown"), True, C_CYAN), (sx, sy)); sy += 18
+    
+    met_str = format_time(world.time_elapsed)
+    surface.blit(font_tiny.render(f"MET  T+ {met_str}", True, C_TEXT), (sx, sy)); sy += 14
+    surface.blit(font_tiny.render(f"WARP {world.time_warp}x", True, C_TEXT), (sx, sy))
 
-    surface.blit(font_tiny.render("TARGET ORBIT", True, (100, 110, 130)), (sx, sy)); sy += 14
-    surface.blit(font_sm.render(orb_data.get("name", orbit_id), True, orb_color), (sx, sy)); sy += 18
-
-    surface.blit(font_tiny.render(f"MET  {format_time(world.time_elapsed)}", True, C_TEXT), (sx, sy)); sy += 16
-    surface.blit(font_tiny.render(f"WARP {world.time_warp:.0f}×", True, C_TEXT), (sx, sy))
+    # ── Column 9: Physics Insights ──────────────────────
+    px = sx + 145
+    py = dy + 10
+    
+    surface.blit(font_sm.render("PHYSICS INSIGHTS", True, ACCENT_GOLD), (px, py)); py += 20
+    
+    # 1. Rocket Equation
+    surface.blit(font_tiny.render("Tsiolkovsky Equation:", True, (160, 170, 180)), (px, py)); py += 12
+    surface.blit(font_tiny.render("Δv = Isp · g₀ · ln(m₀/m_f)", True, C_YELLOW), (px, py)); py += 16
+    
+    # 2. Aerodynamic Drag
+    rho = 1.225 * math.exp(-alt / 8500.0) if alt < 100000 else 0
+    cd = rocket.drag_coefficient
+    area = rocket.cross_sectional_area
+    drag = 0.5 * rho * (vel**2) * cd * area
+    surface.blit(font_tiny.render("Aerodynamic Drag:", True, (160, 170, 180)), (px, py)); py += 12
+    surface.blit(font_tiny.render("F_d = ½ ρ v² C_d A", True, C_RED), (px, py)); py += 14
+    surface.blit(font_tiny.render(f"F_d ≈ {drag/1000:.2f} kN", True, C_TEXT), (px, py)); py += 18
+    
+    # 3. Dynamic Pressure (Q)
+    q = 0.5 * rho * (vel**2) / 1000.0 # kPa
+    surface.blit(font_tiny.render("Dynamic Pressure (Q):", True, (160, 170, 180)), (px, py)); py += 12
+    surface.blit(font_tiny.render("q = ½ ρ v²", True, (255, 140, 0)), (px, py)); py += 14
+    surface.blit(font_tiny.render(f"q ≈ {q:.2f} kPa", True, C_TEXT), (px, py)); py += 18
+    
+    # 4. Newton's Second Law
+    surface.blit(font_tiny.render("Newton's Second Law:", True, (160, 170, 180)), (px, py)); py += 12
+    surface.blit(font_tiny.render("a = ΣF / m", True, C_GREEN_GO), (px, py)); py += 14
+    accel = (world.last_thrust_n - drag) / rocket.get_total_mass() if rocket.get_total_mass() > 0 else 0
+    surface.blit(font_tiny.render(f"a_net ≈ {accel:.2f} m/s²", True, C_TEXT), (px, py))
 
 
 def draw_hud(surface, font, font_lg, world, phase, vehicle_name, orbit_id):
