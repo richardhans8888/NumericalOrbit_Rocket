@@ -100,10 +100,14 @@ class CustomRocketBuilder:
         self.fields = [
             {"label": "Rocket Name", "key": "name", "type": "text", "val": str(self.custom_data["name"])},
             {"label": "S1 Fuel Tank", "key": "s1_tank", "type": "part", "options": self.tank_ids, "db": FUEL_TANKS},
+            {"label": "S1 Fuel Load (%)", "key": "s1_fuel_load", "type": "num", "val": str(self.custom_data.get("s1_fuel_load", 100))},
             {"label": "S1 Engine", "key": "s1_engine", "type": "part", "options": self.engine_ids, "db": ENGINES},
+            {"label": "S1 Engine HP (%)", "key": "s1_hp_tune", "type": "num", "val": str(self.custom_data.get("s1_hp_tune", 100))},
             {"label": "S1 Engine Count", "key": "s1_engine_count", "type": "num", "val": "1"},
             {"label": "S2 Fuel Tank", "key": "s2_tank", "type": "part", "options": self.tank_ids, "db": FUEL_TANKS},
+            {"label": "S2 Fuel Load (%)", "key": "s2_fuel_load", "type": "num", "val": str(self.custom_data.get("s2_fuel_load", 100))},
             {"label": "S2 Engine", "key": "s2_engine", "type": "part", "options": self.engine_ids, "db": ENGINES},
+            {"label": "S2 Engine HP (%)", "key": "s2_hp_tune", "type": "num", "val": str(self.custom_data.get("s2_hp_tune", 100))},
             {"label": "Fairing Type", "key": "fairing", "type": "part", "options": self.fairing_ids, "db": FAIRINGS},
             {"label": "Drag Coeff (Cd)", "key": "drag_coefficient", "type": "num", "val": str(self.custom_data["drag_coefficient"])},
             {"label": "Rocket Area (m2)", "key": "cross_sectional_area", "type": "num", "val": str(self.custom_data["cross_sectional_area"])},
@@ -118,25 +122,32 @@ class CustomRocketBuilder:
         # S1
         t1 = FUEL_TANKS[self.tank_ids[self.sel_parts["s1_tank"]]]
         e1 = ENGINES[self.engine_ids[self.sel_parts["s1_engine"]]]
-        ec1 = int(self.fields[3]["val"]) if self.fields[3]["val"].isdigit() else 1
+        
+        # Tuning Values
+        s1_fuel_pct = float(self.fields[2]["val"]) / 100.0 if self.fields[2]["val"].replace('.','',1).isdigit() else 1.0
+        s1_hp_tune = float(self.fields[4]["val"]) / 100.0 if self.fields[4]["val"].replace('.','',1).isdigit() else 1.0
+        ec1 = int(self.fields[5]["val"]) if self.fields[5]["val"].isdigit() else 1
         
         s1_dry = t1["dry_mass"] + (e1["mass"] * ec1)
-        s1_fuel = t1["propellant_mass"]
-        s1_t_sl = e1["thrust_sl"] * ec1
-        s1_t_vac = e1["thrust_vac"] * ec1
+        s1_fuel = t1["propellant_mass"] * s1_fuel_pct
+        s1_t_sl = e1["thrust_sl"] * ec1 * s1_hp_tune
+        s1_t_vac = e1["thrust_vac"] * ec1 * s1_hp_tune
         s1_isp = e1["isp_vac"]
-        s1_power = e1.get("power_draw_kw", 0) * ec1
+        s1_power = e1.get("power_draw_kw", 0) * ec1 * s1_hp_tune
         s1_batt = t1.get("battery_capacity_kwh", 0)
         
         # S2
         t2 = FUEL_TANKS[self.tank_ids[self.sel_parts["s2_tank"]]]
         e2 = ENGINES[self.engine_ids[self.sel_parts["s2_engine"]]]
         
+        s2_fuel_pct = float(self.fields[7]["val"]) / 100.0 if self.fields[7]["val"].replace('.','',1).isdigit() else 1.0
+        s2_hp_tune = float(self.fields[9]["val"]) / 100.0 if self.fields[9]["val"].replace('.','',1).isdigit() else 1.0
+        
         s2_dry = t2["dry_mass"] + e2["mass"]
-        s2_fuel = t2["propellant_mass"]
-        s2_t_vac = e2["thrust_vac"]
+        s2_fuel = t2["propellant_mass"] * s2_fuel_pct
+        s2_t_vac = e2["thrust_vac"] * s2_hp_tune
         s2_isp = e2["isp_vac"]
-        s2_power = e2.get("power_draw_kw", 0)
+        s2_power = e2.get("power_draw_kw", 0) * s2_hp_tune
         s2_batt = t2.get("battery_capacity_kwh", 0)
 
         # Fairing
@@ -186,9 +197,16 @@ class CustomRocketBuilder:
         self.custom_data["fairing"]["mass"] = f["mass"]
         self.custom_data["fairing"]["jettison_altitude"] = f["jettison_altitude"]
         
-        self.custom_data["drag_coefficient"] = float(self.fields[7]["val"]) if self.fields[7]["val"].replace('.','',1).isdigit() else 0.4
-        self.custom_data["cross_sectional_area"] = float(self.fields[8]["val"]) if self.fields[8]["val"].replace('.','',1).isdigit() else 10.0
+        self.custom_data["drag_coefficient"] = float(self.fields[11]["val"]) if self.fields[11]["val"].replace('.','',1).isdigit() else 0.4
+        self.custom_data["cross_sectional_area"] = float(self.fields[12]["val"]) if self.fields[12]["val"].replace('.','',1).isdigit() else 10.0
         self.custom_data["name"] = self.fields[0]["val"]
+        
+        # Save tuning values
+        self.custom_data["s1_fuel_load"] = float(self.fields[2]["val"]) if self.fields[2]["val"].replace('.','',1).isdigit() else 100.0
+        self.custom_data["s1_hp_tune"] = float(self.fields[4]["val"]) if self.fields[4]["val"].replace('.','',1).isdigit() else 100.0
+        self.custom_data["s2_fuel_load"] = float(self.fields[7]["val"]) if self.fields[7]["val"].replace('.','',1).isdigit() else 100.0
+        self.custom_data["s2_hp_tune"] = float(self.fields[9]["val"]) if self.fields[9]["val"].replace('.','',1).isdigit() else 100.0
+        
         self.custom_data["analysis"] = {
             "twr": float(self.s1_twr),
             "delta_v_m_s": float(self.total_dv),
@@ -197,12 +215,12 @@ class CustomRocketBuilder:
 
     def _draw_rocket_preview(self, rect):
         """Draw a simple 2D visualization of the rocket based on selected parts."""
-        cx, cy = rect.centerx, rect.bottom - 40
+        cx, cy = rect.centerx, rect.bottom - 100
         
         # Scaling
-        s1_h = 140 if "LARGE" in self.tank_ids[self.sel_parts["s1_tank"]] else 100 if "MEDIUM" in self.tank_ids[self.sel_parts["s1_tank"]] else 60
-        s2_h = 80 if "LARGE" in self.tank_ids[self.sel_parts["s2_tank"]] else 60 if "MEDIUM" in self.tank_ids[self.sel_parts["s2_tank"]] else 40
-        w = 40 if "LARGE" in self.tank_ids[self.sel_parts["s1_tank"]] else 30
+        s1_h = 180 if "LARGE" in self.tank_ids[self.sel_parts["s1_tank"]] else 140 if "MEDIUM" in self.tank_ids[self.sel_parts["s1_tank"]] else 90
+        s2_h = 110 if "LARGE" in self.tank_ids[self.sel_parts["s2_tank"]] else 80 if "MEDIUM" in self.tank_ids[self.sel_parts["s2_tank"]] else 50
+        w = 46 if "LARGE" in self.tank_ids[self.sel_parts["s1_tank"]] else 34
         
         # Stage 1
         s1_rect = pygame.Rect(cx - w // 2, cy - s1_h, w, s1_h)
@@ -213,17 +231,17 @@ class CustomRocketBuilder:
         draw_rounded_rect(self.screen, (180, 180, 190), s2_rect, radius=2, border_color=(100, 100, 110), border_w=2)
         
         # Fairing (Nose cone)
-        f_h = 50
+        f_h = 60
         pts = [(cx - w // 2, cy - s1_h - s2_h), (cx + w // 2, cy - s1_h - s2_h), (cx, cy - s1_h - s2_h - f_h)]
         pygame.draw.polygon(self.screen, (220, 220, 230), pts)
         pygame.draw.polygon(self.screen, (100, 100, 110), pts, 2)
         
         # Engines
-        ec1 = int(self.fields[3]["val"]) if self.fields[3]["val"].isdigit() else 1
+        ec1 = int(self.fields[5]["val"]) if self.fields[5]["val"].isdigit() else 1
         for i in range(min(ec1, 9)):
-            ex = cx - (min(ec1, 3) * 8) // 2 + (i % 3) * 8
-            ey = cy + (i // 3) * 4
-            pygame.draw.rect(self.screen, (60, 60, 70), (ex, ey, 6, 8))
+            ex = cx - (min(ec1, 3) * 10) // 2 + (i % 3) * 10
+            ey = cy + (i // 3) * 6
+            pygame.draw.rect(self.screen, (60, 60, 70), (ex, ey, 8, 10))
 
         # Labels
         self.screen.blit(self.f_tiny.render("FAIRING", True, TEXT_DIM), (cx + w // 2 + 10, cy - s1_h - s2_h - f_h // 2))
@@ -237,24 +255,32 @@ class CustomRocketBuilder:
         t_surf = self.f_title.render(title, True, ACCENT_CYAN)
         self.screen.blit(t_surf, (self.W // 2 - t_surf.get_width() // 2, 30))
 
-        # Left Panel: Physics Dashboard
-        lx = 50
+        # 1. Physics Dashboard (Left)
+        lx = 40
         ly = 110
-        draw_rounded_rect(self.screen, PANEL_DARK, (lx - 10, ly - 10, 320, self.H - 220), radius=10, border_color=BORDER, border_w=1)
+        draw_rounded_rect(self.screen, PANEL_DARK, (lx - 10, ly - 10, 310, self.H - 220), radius=10, border_color=BORDER, border_w=1)
         self.screen.blit(self.f_head.render("PHYSICS DASHBOARD", True, ACCENT_GOLD), (lx, ly)); ly += 35
         
         s1 = self.custom_data["stages"][0]
         s2 = self.custom_data["stages"][1]
         
+        # Get base thrust for HP display
+        e1_base = ENGINES[self.engine_ids[self.sel_parts["s1_engine"]]]
+        e2_base = ENGINES[self.engine_ids[self.sel_parts["s2_engine"]]]
+        s1_base_hp = e1_base["thrust_vac"] / 1000.0
+        s2_base_hp = e2_base["thrust_vac"] / 1000.0
+
         physics_stats = [
             ("Total Mass", f"{self.total_mass:,.0f} kg", TEXT_HI),
             ("Liftoff TWR", f"{self.s1_twr:.2f}", ACCENT_GRN if self.s1_twr > 1.2 else ACCENT_RED),
             ("Total Delta-V", f"{self.total_dv:,.0f} m/s", ACCENT_CYAN),
             ("", "", TEXT_DIM),
+            ("S1 Base HP", f"{s1_base_hp:,.0f} hp", ACCENT_CYAN),
             ("S1 Propellant", f"{s1['propellant_mass']:,.0f} kg", TEXT_HI),
             ("S1 Thrust (SL)", f"{s1['thrust_sl']/1000:,.0f} kN", TEXT_HI),
             ("S1 Burn Time", f"{s1['burn_time']:.1f} s", TEXT_HI),
             ("", "", TEXT_DIM),
+            ("S2 Base HP", f"{s2_base_hp:,.0f} hp", ACCENT_CYAN),
             ("S2 Propellant", f"{s2['propellant_mass']:,.0f} kg", TEXT_HI),
             ("S2 Thrust (Vac)", f"{s2['thrust_vac']/1000:,.0f} kN", TEXT_HI),
             ("S2 Burn Time", f"{s2['burn_time']:.1f} s", TEXT_HI),
@@ -266,28 +292,45 @@ class CustomRocketBuilder:
         for label, val, col in physics_stats:
             if label:
                 self.screen.blit(self.f_small.render(label, True, TEXT_DIM), (lx, ly))
-                self.screen.blit(self.f_body.render(val, True, col), (lx + 140, ly))
+                self.screen.blit(self.f_body.render(val, True, col), (lx + 130, ly))
             ly += 22
 
-        # Center: Visualization
-        preview_rect = pygame.Rect(self.W // 2 - 150, 100, 300, self.H - 200)
+        # 2. Visualization (Center-Left)
+        preview_rect = pygame.Rect(360, 100, 280, self.H - 200)
         self._draw_rocket_preview(preview_rect)
 
-        # Right Panel: Components
-        rx = self.W - 450
-        ry = 110
-        draw_rounded_rect(self.screen, PANEL_DARK, (rx - 10, ry - 10, 410, self.H - 220), radius=10, border_color=BORDER, border_w=1)
-        self.screen.blit(self.f_head.render("VEHICLE COMPONENTS", True, ACCENT_CYAN), (rx, ry)); ry += 35
+        # 3. Stage 1 Components (Center-Right)
+        sx1 = 660
+        sy1 = 110
+        draw_rounded_rect(self.screen, PANEL_DARK, (sx1 - 10, sy1 - 10, 360, self.H - 220), radius=10, border_color=BORDER, border_w=1)
+        self.screen.blit(self.f_head.render("STAGE 1 CONFIG", True, ACCENT_CYAN), (sx1, sy1)); sy1 += 35
         
+        # 4. Stage 2 & Aero (Far Right)
+        sx2 = 1040
+        sy2 = 110
+        draw_rounded_rect(self.screen, PANEL_DARK, (sx2 - 10, sy2 - 10, 360, self.H - 220), radius=10, border_color=BORDER, border_w=1)
+        self.screen.blit(self.f_head.render("STAGE 2 & AERO", True, ACCENT_MAG), (sx2, sy2)); sy2 += 35
+
         self.rects = []
-        field_gap = 42
+        field_gap = 45
+        
+        # Indices for Box 1: 0, 1, 2, 3, 4, 5
+        # Indices for Box 2: 6, 7, 8, 9, 10, 11, 12
+        
         for i, field in enumerate(self.fields):
-            y = ry + i * field_gap
+            is_box1 = (i <= 5)
+            rx = sx1 if is_box1 else sx2
+            ry_base = sy1 if is_box1 else sy2
+            
+            # Local index within the box
+            idx_in_box = i if is_box1 else (i - 6)
+            y = ry_base + idx_in_box * field_gap
+            
             label_surf = self.f_small.render(field["label"], True, TEXT_DIM)
             self.screen.blit(label_surf, (rx, y))
 
             # Input/Select box
-            rect = pygame.Rect(rx + 130, y - 5, 250, 32)
+            rect = pygame.Rect(rx + 140, y - 5, 200, 32)
             self.rects.append(rect)
             
             is_active = (i == self.active_field)
@@ -300,7 +343,7 @@ class CustomRocketBuilder:
                 sel_idx = self.sel_parts[field["key"]]
                 part_name = field["db"][field["options"][sel_idx]]["name"]
                 # Trim long names
-                if len(part_name) > 22: part_name = part_name[:20] + ".."
+                if len(part_name) > 18: part_name = part_name[:16] + ".."
                 val_surf = self.f_body.render(f"< {part_name} >", True, (255, 255, 255) if is_active else TEXT_DIM)
             else:
                 val_surf = self.f_body.render(field["val"], True, (255, 255, 255) if is_active else TEXT_DIM)

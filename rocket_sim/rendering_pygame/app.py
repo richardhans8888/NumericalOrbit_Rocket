@@ -779,17 +779,18 @@ class SciGraph:
                                  (min(dash_x + 3, cx_), cy_))
 
         # ── Labels ──────────────────────────────────────
-        # Y-axis label (vertical)
+        # Y-axis label (top left)
         y_lbl = font_tiny.render(self.y_label, True, self.color)
-        y_lbl_r = pygame.transform.rotate(y_lbl, 90)
-        surface.blit(y_lbl_r, (x + 2, y + h // 2 - y_lbl_r.get_height() // 2))
+        surface.blit(y_lbl, (x + 5, y + 2))
 
         # Unit top-right
+        u_w = 0
         if self.unit:
             u = font_tiny.render(f"[{self.unit}]", True, (80, 90, 110))
-            surface.blit(u, (x + w - u.get_width() - 4, y + 2))
+            u_w = u.get_width() + 4
+            surface.blit(u, (x + w - u_w, y + 2))
 
-        # Current value top-left
+        # Current value (top right, left of unit)
         cur = self.data[-1]
         if abs(cur) >= 10000:
             cur_str = f"{cur/1000:.2f}k"
@@ -798,7 +799,7 @@ class SciGraph:
         else:
             cur_str = f"{cur:.3f}"
         cv = font_tiny.render(cur_str, True, self.color)
-        surface.blit(cv, (px0 + 3, y + 3))
+        surface.blit(cv, (x + w - u_w - cv.get_width() - 6, y + 2))
 
         # Border
         pygame.draw.rect(surface, C_AXIS, rect, 1)
@@ -1455,11 +1456,11 @@ def draw_dashboard(surface, font, font_sm, font_tiny, rocket, world,
         # Row 1
         [("alt",    "Altitude",          "km",   C_CYAN),
          ("vel",    "Velocity",          "m/s",  (255, 140, 0)),
-         ("maxq",   "Dyn. Pressure",     "kPa",  C_RED)],
+         ("maxq",   "Dyn. Pres.",        "kPa",  C_RED)],
         # Row 2
         [("gforce", "G-Force",           "g",    C_MAGENTA),
          ("thrust", "Thrust",            "kN",   C_YELLOW),
-         ("fuel_g", "Propellant Mass %", "%",    C_GREEN_GO)],
+         ("fuel_g", "Propellant",        "%",    C_GREEN_GO)],
     ]
 
     for row_i, row in enumerate(graph_rows):

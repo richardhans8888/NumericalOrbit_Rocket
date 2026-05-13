@@ -271,6 +271,10 @@ VEHICLES = {
         "payload_geo_kg": 0,
         "orbit_types": ["LEO", "SSO", "MEO", "GTO"],
         "icon_char": "??",
+        "s1_fuel_load": 100.0,
+        "s1_hp_tune": 100.0,
+        "s2_fuel_load": 100.0,
+        "s2_hp_tune": 100.0,
         "stages": [
             {
                 "name": "Custom Stage 1",
