@@ -67,14 +67,9 @@ class World:
                     self.phase = FlightPhase.GRAVITY_TURN
                 
             target_alt = self.mission.orbit_data["target_altitude_m"]
-            
-            # Very simplistic gravity turn that zeros out pitch as we approach target altitude
-            # Starts aggressively pitching down above 15km
-            if alt > 1000:
-                if target_alt == 0:
-                    pitch_fraction = 0.0
-                else:
-                    pitch_fraction = 1.0 - min((alt - 1000) / (target_alt * 0.9), 1.0)
+
+            if alt > 1000 and target_alt > 0:
+                pitch_fraction = 1.0 - min((alt - 1000) / (target_alt * 0.9), 1.0)
                 # Keep it strictly between pi/2 (up) and 0 (horizontal)
                 target_pitch = (math.pi / 2.0) * max(pitch_fraction, 0.0)
                 # Wait, if we pitch to 0, thrust is in +x. That is correct.
@@ -92,7 +87,7 @@ class World:
         event, thrust_mag = self.rocket.update_systems(dt, throttle_pct)
         self.last_thrust_n = thrust_mag
         
-        if event == "EVENT_SEPARATION":
+        if event == EVENT_STAGE_SEPARATION:
             detached = self.rocket.separate_current_stage()
             if detached:
                 pitch = self.rocket.pitch_angle
@@ -115,8 +110,8 @@ class World:
                 })
                 self.phase = FlightPhase.BOOSTER_BURNOUT
                 # Jump to second stage phase if applicable
-                if len(self.rocket.stages) - self.rocket.current_stage_index == 1:
-                     self.phase = FlightPhase.UPPER_STAGE_BURN
+                if self.rocket.current_stage_index >= 1:
+                    self.phase = FlightPhase.UPPER_STAGE_BURN
                 # If no stages remain, switch to satellite mode so dynamics continue (no mass=freeze)
                 if self.rocket.current_stage_index >= len(self.rocket.stages) and not getattr(self.rocket, "satellite_mode", False):
                     m, a, cd = self.estimate_satellite_params()
@@ -189,23 +184,27 @@ class World:
             
         # 3. Handle Debris
         for d in self.debris:
+            if d.get("landed"):
+                continue
             r = math.sqrt(d["x"]**2 + d["y"]**2)
             d_alt = r - EARTH_RADIUS
-            if d_alt > 0:
-                gx, gy = compute_gravity_vector(d["x"], d["y"])
-                
-                d_vel = math.sqrt(d["vx"]**2 + d["vy"]**2)
-                d_drag_mag = compute_drag_force(d_vel, d_alt, 1.0, 5.0)
-                
-                if d.get("kind") == "fairing":
-                    d_mass = 250.0
-                else:
-                    d_mass = d["stage"].dry_mass
-                ax_drag = -(d["vx"] / d_vel) * (d_drag_mag / d_mass) if d_vel > 0 else 0
-                ay_drag = -(d["vy"] / d_vel) * (d_drag_mag / d_mass) if d_vel > 0 else 0
-                
-                d["vx"], d["vy"] = update_velocity(d["vx"], d["vy"], gx + ax_drag, gy + ay_drag, dt)
-                d["x"], d["y"] = update_position(d["x"], d["y"], d["vx"], d["vy"], dt)
+            if d_alt <= 0:
+                d["landed"] = True
+                continue
+            gx, gy = compute_gravity_vector(d["x"], d["y"])
+
+            d_vel = math.sqrt(d["vx"]**2 + d["vy"]**2)
+            d_drag_mag = compute_drag_force(d_vel, d_alt, 1.0, 5.0)
+
+            if d.get("kind") == "fairing":
+                d_mass = 250.0
+            else:
+                d_mass = d["stage"].dry_mass
+            ax_drag = -(d["vx"] / d_vel) * (d_drag_mag / d_mass) if d_vel > 0 else 0
+            ay_drag = -(d["vy"] / d_vel) * (d_drag_mag / d_mass) if d_vel > 0 else 0
+
+            d["vx"], d["vy"] = update_velocity(d["vx"], d["vy"], gx + ax_drag, gy + ay_drag, dt)
+            d["x"], d["y"] = update_position(d["x"], d["y"], d["vx"], d["vy"], dt)
 
         self.debris = [d for d in self.debris if (math.sqrt(d["x"]**2 + d["y"]**2) - EARTH_RADIUS) > 0]
 

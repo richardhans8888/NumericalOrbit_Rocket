@@ -3,6 +3,7 @@ import math
 from physics.thrust import compute_thrust_force
 from physics.constants import EARTH_RADIUS
 from rocket.stage import Stage
+from simulation.events import EVENT_STAGE_SEPARATION
 
 class Rocket:
     def __init__(self, vehicle_data):
@@ -79,7 +80,7 @@ class Rocket:
                 
                 if current_stage.fuel_system.empty:
                     current_stage.active = False
-                    event = "EVENT_SEPARATION"
+                    event = EVENT_STAGE_SEPARATION
                     thrust_magnitude = 0.0
         return event, thrust_magnitude
 
