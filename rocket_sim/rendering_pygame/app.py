@@ -1556,7 +1556,7 @@ def draw_failure_screen(surface, font_lg, font_sm, title, details):
 # ── Main ─────────────────────────────────────────────────
 def run_app():
     pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE | pygame.SCALED)
     pygame.display.set_caption("Satellite Mission Simulator")
     clock  = pygame.time.Clock()
 
