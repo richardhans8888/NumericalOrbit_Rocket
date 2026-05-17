@@ -1621,7 +1621,7 @@ def run_app():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
-                elif event.key == pygame.K_r and (fail_state["active"] or explosion_state["active"]):
+                elif event.key == pygame.K_r:
                     vid, oid = do_selection()
                     world    = init_world(vid, oid)
                     graphs   = make_graphs()
@@ -1645,21 +1645,6 @@ def run_app():
                 elif event.key == pygame.K_c:
                     cam_mode = (cam_mode + 1) % 4
                     zoom_override = None
-                elif event.key == pygame.K_r:
-                    # New mission — show selection screen again
-                    vid, oid = do_selection()
-                    world    = init_world(vid, oid)
-                    graphs   = make_graphs()
-                    traj     = make_traj(oid)
-                    lv = 0; cam_mode = 0
-                    manual_pitch = 0.0; manual_throttle = 1.0
-                    zoom_override = None
-                    vehicle_name = VEHICLES[vid]["name"]
-                    prev_phase = world.phase
-                    deploy_state = {"active": False, "t": 0.0}
-                    prev_debris_len = 0
-                    fail_state = {"active": False, "title": "", "details": ""}
-                    explosion_state = {"active": False, "t": 0.0, "x": 0.0, "y": 0.0}
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 4:
@@ -1788,7 +1773,6 @@ def run_app():
         is_active = (
             rocket.current_stage_index < len(rocket.stages)
             and rocket.stages[rocket.current_stage_index].active
-            and world.phase != FlightPhase.PRELAUNCH
             and world.phase != FlightPhase.PRELAUNCH
             and world.phase != FlightPhase.SECO
         )

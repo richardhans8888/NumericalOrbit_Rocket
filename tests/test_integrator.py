@@ -31,7 +31,7 @@ def test_euler_free_fall_position():
     dt = 1.0
     vx, vy = update_velocity(vx, vy, 0.0, -g, dt)
     x, y = update_position(x, y, vx, vy, dt)
-    assert abs(y - (1000.0 + vy)) < 0.01  # Euler: position uses updated velocity
+    assert abs(y - (1000.0 + vy)) < 0.01  # semi-implicit Euler (Symplectic Euler): position uses updated velocity
 
 
 def test_euler_constant_velocity_no_acceleration():

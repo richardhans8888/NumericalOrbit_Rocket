@@ -12,7 +12,7 @@ Direction: unit vector from position toward origin
 import math
 from physics.constants import G, EARTH_MASS
 
-def compute_gravity_vector(x, y):
+def compute_gravity_vector(x: float, y: float) -> tuple[float, float]:
     """
     Computes true 2D gravity acceleration vector pulling towards (0,0).
     

@@ -13,7 +13,7 @@ Force decomposition:
 """
 import math
 
-def compute_thrust_force(engine_power, direction_angle_rad=math.pi / 2.0):
+def compute_thrust_force(engine_power: float, direction_angle_rad: float = math.pi / 2.0) -> tuple[float, float]:
     """
     Decompose engine thrust into x and y force components.
     

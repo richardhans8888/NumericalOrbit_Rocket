@@ -11,7 +11,7 @@ at small timesteps. For higher accuracy, Runge-Kutta 4 (RK4) could
 be implemented in a future iteration.
 """
 
-def update_velocity(vx, vy, ax, ay, dt):
+def update_velocity(vx: float, vy: float, ax: float, ay: float, dt: float) -> tuple[float, float]:
     """
     Update velocity components using Forward Euler integration.
     
@@ -25,7 +25,7 @@ def update_velocity(vx, vy, ax, ay, dt):
     """
     return vx + ax * dt, vy + ay * dt
 
-def update_position(x, y, vx, vy, dt):
+def update_position(x: float, y: float, vx: float, vy: float, dt: float) -> tuple[float, float]:
     """
     Update position components using Forward Euler integration.
     
@@ -40,7 +40,7 @@ def update_position(x, y, vx, vy, dt):
     return x + vx * dt, y + vy * dt
 
 
-def rk4_step_state(state, dt, deriv_fn):
+def rk4_step_state(state: list[float], dt: float, deriv_fn) -> list[float]:
     """
     Generic RK4 step for a state vector (list/tuple of floats).
 

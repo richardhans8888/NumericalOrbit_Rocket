@@ -15,7 +15,7 @@ Drag force follows the standard aerodynamic drag equation:
 import math
 from physics.constants import SEA_LEVEL_DENSITY, SCALE_HEIGHT, ATMOSPHERE_BOUNDARY
 
-def get_air_density(altitude):
+def get_air_density(altitude: float) -> float:
     """
     Calculate atmospheric density at a given altitude using exponential model.
     
@@ -29,7 +29,7 @@ def get_air_density(altitude):
         return 0.0
     return SEA_LEVEL_DENSITY * math.exp(-altitude / SCALE_HEIGHT)
 
-def compute_drag_force(velocity_magnitude, altitude, drag_coefficient, cross_sectional_area):
+def compute_drag_force(velocity_magnitude: float, altitude: float, drag_coefficient: float, cross_sectional_area: float) -> float:
     """
     Compute aerodynamic drag force magnitude.
     

@@ -2,7 +2,7 @@
 from rocket.fuel_system import FuelSystem
 
 class Stage:
-    def __init__(self, name, dry_mass, fuel_mass, thrust_sl, thrust_vac, burn_rate):
+    def __init__(self, name: str, dry_mass: float, fuel_mass: float, thrust_sl: float, thrust_vac: float, burn_rate: float) -> None:
         self.name = name
         self.dry_mass = dry_mass
         self.fuel_system = FuelSystem(fuel_mass)
@@ -12,10 +12,10 @@ class Stage:
         self.active = False
         self.detached = False
         
-    def get_mass(self):
+    def get_mass(self) -> float:
         return self.dry_mass + self.fuel_system.fuel
-        
-    def update(self, current_thrust_power, dt):
+
+    def update(self, current_thrust_power: float, dt: float) -> float:
         if not self.active or self.detached:
             return 0.0
             

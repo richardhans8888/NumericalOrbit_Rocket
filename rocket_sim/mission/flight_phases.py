@@ -1,6 +1,7 @@
 # mission/flight_phases.py
+import enum
 
-class FlightPhase:
+class FlightPhase(enum.IntEnum):
     PRELAUNCH = 0
     LIFTOFF = 1
     MAX_Q = 2

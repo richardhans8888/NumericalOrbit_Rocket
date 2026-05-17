@@ -1,6 +1,6 @@
 # mission/telemetry.py
 
-def format_time(seconds):
+def format_time(seconds: float) -> str:
     if seconds < 0:
         mins = int(abs(seconds) // 60)
         secs = int(abs(seconds) % 60)
