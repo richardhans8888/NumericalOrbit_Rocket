@@ -26,7 +26,6 @@ def test_event_constant_is_correct_string():
 def test_rocket_emits_correct_event_string():
     # Regression: rocket.py used to emit "EVENT_SEPARATION" (wrong).
     # Import the value that rocket.py actually emits and confirm it matches the constant.
-    from simulation.events import EVENT_STAGE_SEPARATION as CONSTANT
     from rocket import rocket as rocket_module
     import inspect
     source = inspect.getsource(rocket_module)

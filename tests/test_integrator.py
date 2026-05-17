@@ -83,7 +83,6 @@ def test_rk4_more_accurate_than_euler_for_same_step():
     rk4 = rk4_step_state(state0, dt, deriv)
 
     # Euler
-    vx_e = state0[1] + (-(omega**2) * state0[0]) * dt
     x_e = state0[0] + state0[1] * dt
 
     # Exact

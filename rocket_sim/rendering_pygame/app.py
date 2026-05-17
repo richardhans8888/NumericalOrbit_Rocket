@@ -41,14 +41,8 @@ C_PAD       = (140, 140, 135)
 C_PAD_DARK  = (80,  80,  80)
 C_ROAD      = (90,  90,  90)
 C_TOWER     = (160, 150, 140)
-C_VAB       = (110, 115, 130)
 C_VAB_DOOR  = (70,  75,  85)
-C_ORANGE    = (225, 120, 20)
 C_WHITE     = (240, 240, 235)
-C_NOZZLE    = (60,  60,  65)
-C_FLAME_IN  = (255, 255, 180)
-C_FLAME_MID = (255, 200, 50)
-C_FLAME_OUT = (255, 100, 20)
 C_DASH_BG   = (10,  14,  22)
 C_SIDE_BG   = (8,   12,  20)
 C_DASH_LINE = (38,  50,  72)
@@ -690,7 +684,7 @@ class SciGraph:
                 break
         return ticks
 
-    def draw(self, surface, rect, font_tiny, font_label=None):
+    def draw(self, surface, rect, font_tiny):
         x, y, w, h = rect.x, rect.y, rect.width, rect.height
 
         # ── Background ──────────────────────────────────
@@ -738,7 +732,6 @@ class SciGraph:
                                         ty - lbl_surf.get_height() // 2))
 
         # X-axis: time ticks (evenly spaced, label as index count)
-        n_pts = len(self.data)
         x_ticks = 5
         for i in range(x_ticks + 1):
             tx = px0 + int(i * pw / x_ticks)
@@ -1409,11 +1402,6 @@ def draw_dashboard(surface, font, font_sm, font_tiny, rocket, world,
     # ── Column 0: Key Numbers ─────────────────────────
     col_x = 10; ly = dy + 10
     surface.blit(font_sm.render("TELEMETRY", True, C_YELLOW), (col_x, ly)); ly += 20
-
-    def kv(label, val, unit, color=C_TEXT):
-        surface.blit(font_tiny.render(label, True, (120, 130, 150)), (col_x, ly))
-        v_surf = font_sm.render(f"{val} {unit}", True, color)
-        surface.blit(v_surf, (col_x, ly + 12))
 
     pairs = [
         ("Velocity",   f"{vel:.1f}",              "m/s",  C_GREEN_GO),

@@ -25,7 +25,6 @@ ACCENT_CYAN = (0, 200, 255)
 ACCENT_GOLD = (255, 200, 60)
 ACCENT_GRN  = (40, 220, 100)
 ACCENT_RED  = (255, 70, 60)
-ACCENT_MAG  = (200, 80, 240)
 
 
 def lerp_color(c1, c2, t):
@@ -38,27 +37,6 @@ def draw_rounded_rect(surf, color, rect, radius=8, border_color=None, border_w=1
     if border_color:
         pygame.draw.rect(surf, border_color, rect, border_w, border_radius=radius)
 
-
-def draw_glow_text(surf, text, font, color, pos, glow_color=None, glow_passes=2):
-    if glow_color:
-        for d in range(glow_passes, 0, -1):
-            alpha = int(120 / d)
-            glow_surf = font.render(text, True, (*glow_color, alpha))
-            for ox, oy in [(-d, 0), (d, 0), (0, -d), (0, d)]:
-                surf.blit(glow_surf, (pos[0] + ox, pos[1] + oy))
-    surf.blit(font.render(text, True, color), pos)
-
-
-# ASCII rocket art per vehicle code
-ROCKET_ART = {
-    "F9":  ["  /\\  ", " /  \\ ", " |  | ", " |  | ", " \\__/ "],
-    "AV":  ["  /\\  ", " /AT\\ ", " |LAS| ", " | V | ", " \\__/ "],
-    "A5":  [" /\\/\\ ", "/Ari \\ ", "|  5  |", "|  E  |", "\\____/"],
-    "EL":  ["  /\\  ", " /EL\\ ", " |  | ", " \\__/ "],
-    "S2":  ["  /\\  ", " /SO\\ ", " |YUZ| ", " | 2 | ", " \\__/ "],
-    "PX":  ["  /\\  ", " /PS\\ ", " |LV\\ ", " |  | ", " \\__/ "],
-    "??":  ["  /\\  ", " /??\\ ", " |??| ", " |??| ", " \\__/ "],
-}
 
 # Orbit badge colors map
 ORBIT_COLORS = {
@@ -78,7 +56,6 @@ class CustomRocketBuilder:
         self.f_small = font_small
         self.f_tiny = font_tiny
         self.f_title = pygame.font.SysFont("Menlo", 24, bold=True)
-        self.f_huge = pygame.font.SysFont("Menlo", 40, bold=True)
 
         self.custom_data = VEHICLES["CUSTOM"]
         
@@ -374,7 +351,6 @@ class VehicleSelectScreen:
         self.f_body   = pygame.font.SysFont("Menlo", 13)
         self.f_small  = pygame.font.SysFont("Menlo", 11)
         self.f_tiny   = pygame.font.SysFont("Menlo", 10)
-        self.f_art    = pygame.font.SysFont("Courier New", 11)
         self.f_btn    = pygame.font.SysFont("Menlo", 18, bold=True)
         self.f_badge  = pygame.font.SysFont("Menlo", 10, bold=True)
 

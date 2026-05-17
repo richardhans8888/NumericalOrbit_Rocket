@@ -6,7 +6,7 @@ from physics.drag import compute_drag_force
 from physics.integrator import update_velocity, update_position, rk4_step_state
 from rocket.rocket import Rocket
 from mission.flight_phases import FlightPhase
-from simulation.events import EVENT_STAGE_SEPARATION, EVENT_ENGINE_CUTOFF
+from simulation.events import EVENT_STAGE_SEPARATION
 
 class World:
     def __init__(self, mission_profile):
@@ -70,17 +70,8 @@ class World:
 
             if alt > 1000 and target_alt > 0:
                 pitch_fraction = 1.0 - min((alt - 1000) / (target_alt * 0.9), 1.0)
-                # Keep it strictly between pi/2 (up) and 0 (horizontal)
-                target_pitch = (math.pi / 2.0) * max(pitch_fraction, 0.0)
-                # Wait, if we pitch to 0, thrust is in +x. That is correct.
-                # However, orbital velocity is a tangent to the Earth curve.
-                # To be robust in 2D, pitch should be relative to the local orbital tangent!
-                # Local tangent angle: (x,y) is position. Radial is atan2(y, x). Tangent is radial - pi/2.
                 radial_angle = math.atan2(self.rocket.y, self.rocket.x)
                 tangent_angle = radial_angle - (math.pi / 2.0)
-                
-                # We start pointing radially outward: radial_angle
-                # And transition to tangent_angle
                 self.rocket.pitch_angle = radial_angle * pitch_fraction + tangent_angle * (1.0 - pitch_fraction)
         
         # 1. Update Rocket Systems
