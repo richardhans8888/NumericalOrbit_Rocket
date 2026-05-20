@@ -26,10 +26,12 @@ from rendering_pygame.vehicle_select import run_selection
 # ── Layout ───────────────────────────────────────────────
 WIDTH, HEIGHT = 1720, 900
 SIDE_W  = 185
+RIGHT_W = 360
 DASH_H  = 295          # taller dashboard for proper graphs
 VIEW_X  = SIDE_W
-VIEW_W  = WIDTH - SIDE_W
+VIEW_W  = WIDTH - SIDE_W - RIGHT_W
 VIEW_H  = HEIGHT - DASH_H
+VIEW_RIGHT = VIEW_X + VIEW_W
 FPS     = 60
 
 MOON_DISTANCE = 384400000.0
@@ -549,7 +551,7 @@ def draw_particles(screen, fx_surf, particles, cam_x, cam_y, zoom):
     fx_surf.fill((0, 0, 0, 0))
     for p in particles:
         sx, sy = world_to_screen(p["x"], p["y"], cam_x, cam_y, zoom)
-        if not (VIEW_X - 60 <= sx <= WIDTH + 60 and -60 <= sy <= VIEW_H + 60):
+        if not (VIEW_X - 60 <= sx <= VIEW_RIGHT + 60 and -60 <= sy <= VIEW_H + 60):
             continue
         t = p["life"] / max(p["ttl"], 0.0001)
         if p["kind"] == "smoke":
@@ -578,7 +580,7 @@ def draw_gravity_vector(surface, font_tiny, rocket, cam_x, cam_y, zoom):
     gy = -mu * ry / (r ** 3)
 
     sx, sy = world_to_screen(rx, ry, cam_x, cam_y, zoom)
-    if not (VIEW_X - 80 <= sx <= WIDTH + 80 and -80 <= sy <= VIEW_H + 80):
+    if not (VIEW_X - 80 <= sx <= VIEW_RIGHT + 80 and -80 <= sy <= VIEW_H + 80):
         return
 
     strength = (g / 9.81) ** 0.35
@@ -702,11 +704,12 @@ def get_ascent_stage_panel(world, deploy_state=None):
             "badge": "[LAUNCH]",
             "subtitle": "Ready for liftoff",
             "formulas": [
-                ("Check liftoff condition:", (160, 170, 180)),
+                ("Liftoff TWR Check:", (160, 170, 180)),
                 ("T/W = F_thrust / (m g)", C_CYAN),
-                ("Launch if T/W > 1", C_GREEN_GO),
+                ("Effect: must be > 1 to climb", C_GREEN_GO),
+                ("Newton Gravity:", (160, 170, 180)),
                 ("F_g = G M_E m / r^2", ACCENT_GOLD),
-                ("g = G M_E / r^2", ACCENT_GOLD),
+                ("Effect: pulls rocket downward", C_TEXT),
             ],
             "note": "Before launch, the rocket must produce more upward thrust than its weight.",
         }
@@ -716,12 +719,15 @@ def get_ascent_stage_panel(world, deploy_state=None):
             "badge": "[FIRST STAGE BURN]",
             "subtitle": "Fuel burns, mass decreases",
             "formulas": [
-                ("Rocket acceleration:", (160, 170, 180)),
+                ("Newton's 2nd Law:", (160, 170, 180)),
                 ("a = (F_thrust - F_gravity - F_drag) / m", C_GREEN_GO),
+                ("Effect: updates velocity", C_TEXT),
+                ("Mass Flow:", (160, 170, 180)),
                 ("m(t) = m0 - mdot t", C_YELLOW),
+                ("Effect: lower mass raises T/W", C_TEXT),
+                ("Drag Equation:", (160, 170, 180)),
                 ("F_drag = 1/2 rho v^2 Cd A", C_RED),
-                ("v_new = v_old + a Dt", C_CYAN),
-                ("x_new = x_old + v_new Dt", C_CYAN),
+                ("Effect: causes Max-Q loads", C_TEXT),
             ],
             "note": "Stage 1 pushes hardest near the ground while drag and gravity are largest.",
         }
@@ -731,11 +737,12 @@ def get_ascent_stage_panel(world, deploy_state=None):
             "badge": "[STAGE 1 SEPARATION]",
             "subtitle": "First stage separates",
             "formulas": [
-                ("Instant mass change:", (160, 170, 180)),
+                ("Stage Separation:", (160, 170, 180)),
                 ("m_new = m_old - m_stage1", C_GREEN_GO),
+                ("Effect: instant mass drop", C_TEXT),
+                ("Momentum Continuity:", (160, 170, 180)),
                 ("v_new = v_old", C_CYAN),
-                ("position is continuous", C_TEXT),
-                ("only mass changes instantly", C_TEXT),
+                ("Effect: no sudden velocity jump", C_TEXT),
             ],
             "note": "The separated stage is removed from the vehicle mass, so the next stage accelerates more easily.",
         }
@@ -745,11 +752,15 @@ def get_ascent_stage_panel(world, deploy_state=None):
             "badge": "[SECOND STAGE BURN]",
             "subtitle": "Second stage accelerates",
             "formulas": [
-                ("Acceleration again:", (160, 170, 180)),
+                ("Newton's 2nd Law:", (160, 170, 180)),
                 ("a = (F_thrust - F_gravity - F_drag) / m", C_GREEN_GO),
+                ("Effect: adds orbital speed", C_TEXT),
+                ("Mass Flow:", (160, 170, 180)),
                 ("m(t) = m0 - mdot t", C_YELLOW),
+                ("Velocity Components:", (160, 170, 180)),
                 ("Vx = V cos(theta)", C_MAGENTA),
                 ("Vy = V sin(theta)", C_MAGENTA),
+                ("Rocket Equation:", (160, 170, 180)),
                 ("Dv = Isp g0 ln(m0/mf)", C_YELLOW),
             ],
             "note": "The second stage turns velocity sideways to build orbital speed.",
@@ -760,11 +771,12 @@ def get_ascent_stage_panel(world, deploy_state=None):
             "badge": "[STAGE 2 SEPARATION]",
             "subtitle": "Payload deployment",
             "formulas": [
-                ("Instant mass change:", (160, 170, 180)),
+                ("Stage Separation:", (160, 170, 180)),
                 ("m_new = m_old - m_stage2", C_GREEN_GO),
+                ("Effect: payload keeps motion", C_TEXT),
+                ("Continuity Rule:", (160, 170, 180)),
                 ("v_new = v_old", C_CYAN),
-                ("position is continuous", C_TEXT),
-                ("payload keeps orbital velocity", C_TEXT),
+                ("Effect: no teleport/no impulse", C_TEXT),
             ],
             "note": "The payload separates without a sudden velocity jump in this simulation.",
         }
@@ -774,11 +786,14 @@ def get_ascent_stage_panel(world, deploy_state=None):
             "badge": "[PAYLOAD IN ORBIT]",
             "subtitle": "Stable orbit check",
             "formulas": [
-                ("Orbital condition:", (160, 170, 180)),
+                ("Circular Orbit Speed:", (160, 170, 180)),
                 ("v_orb = sqrt(G M_E / r)", C_CYAN),
+                ("Effect: target sideways speed", C_TEXT),
+                ("Specific Orbital Energy:", (160, 170, 180)),
                 ("epsilon = v^2/2 - mu/r", ACCENT_GOLD),
+                ("Gravity Acceleration:", (160, 170, 180)),
                 ("a_gravity = -mu r / r^3", C_MAGENTA),
-                ("drag approximately 0 above atmosphere", C_TEXT),
+                ("Effect: bends path into orbit", C_TEXT),
             ],
             "note": "Orbit is stable when velocity is mostly sideways and near the circular-orbit speed.",
         }
@@ -1084,7 +1099,7 @@ def draw_stars(surface, alt):
         brightness = min(255, int((alt - 20000) / 80000 * 255))
         random.seed(12345)
         for _ in range(200):
-            sx = random.randint(VIEW_X, WIDTH)
+            sx = random.randint(VIEW_X, VIEW_RIGHT)
             sy = random.randint(0, VIEW_H)
             sz = random.randint(1, 2)
             pygame.draw.circle(surface, (brightness, brightness, brightness), (sx, sy), sz)
@@ -1093,13 +1108,55 @@ def draw_stars(surface, alt):
 def draw_moon(surface, cam_x, cam_y, zoom):
     mx, my = world_to_screen(MOON_DISTANCE, 0, cam_x, cam_y, zoom)
     mr = max(2, int(MOON_RADIUS * zoom))
-    if mr < 500000 and VIEW_X - mr < mx < WIDTH + mr and -mr < my < VIEW_H + mr:
+    if mr < 500000 and VIEW_X - mr < mx < VIEW_RIGHT + mr and -mr < my < VIEW_H + mr:
         pygame.draw.circle(surface, C_MOON, (mx, my), mr)
         if mr > 6:
             for dx, dy, cr in [(0.2, 0.1, 0.15), (-0.3, -0.2, 0.1), (0.1, -0.3, 0.12)]:
                 pygame.draw.circle(surface, (160, 160, 155),
                                    (mx + int(dx * mr), my + int(dy * mr)),
                                    max(1, int(cr * mr)), 1)
+
+
+def draw_gravity_field(surface, cam_x, cam_y, zoom, alt):
+    if alt < 50000:
+        return
+    cx, cy = world_to_screen(0, 0, cam_x, cam_y, zoom)
+    rp = int(EARTH_RADIUS * zoom)
+    if rp < 35 or rp > 1600:
+        return
+
+    ticks = pygame.time.get_ticks() / 1000.0
+    field = pygame.Surface((VIEW_W, VIEW_H), pygame.SRCALPHA)
+    ox = cx - VIEW_X
+    oy = cy
+
+    for i, mult in enumerate((1.08, 1.18, 1.30)):
+        rr = int(rp * mult)
+        if rr <= 0:
+            continue
+        alpha = max(10, 34 - i * 8)
+        pygame.draw.circle(field, (120, 190, 255, alpha), (ox, oy), rr, max(1, int(rp * 0.004)))
+
+    count = 22
+    phase = (ticks * 0.42) % 1.0
+    for i in range(count):
+        ang = (math.tau * i / count) + 0.18 * math.sin(ticks * 0.35 + i)
+        inner = rp * (1.05 + 0.10 * phase)
+        outer = rp * (1.34 + 0.10 * phase)
+        x1 = ox + math.cos(ang) * outer
+        y1 = oy + math.sin(ang) * outer
+        x2 = ox + math.cos(ang) * inner
+        y2 = oy + math.sin(ang) * inner
+        if -80 <= x1 <= VIEW_W + 80 and -80 <= y1 <= VIEW_H + 80:
+            pygame.draw.line(field, (120, 190, 255, 32), (x1, y1), (x2, y2), 1)
+            ah = max(4, int(rp * 0.014))
+            hx = x2 + math.cos(ang) * ah
+            hy = y2 + math.sin(ang) * ah
+            left = (x2 + math.cos(ang + 2.45) * ah, y2 + math.sin(ang + 2.45) * ah)
+            right = (x2 + math.cos(ang - 2.45) * ah, y2 + math.sin(ang - 2.45) * ah)
+            pygame.draw.polygon(field, (120, 190, 255, 42), [(hx, hy), left, right])
+
+    surface.blit(field, (VIEW_X, 0))
 
 
 def draw_earth_detailed(surface, cam_x, cam_y, zoom):
@@ -1110,30 +1167,25 @@ def draw_earth_detailed(surface, cam_x, cam_y, zoom):
     # Safety: when rp is large, avoid allocating giant intermediate surfaces (can crash/segfault).
     # For close views, use a lightweight draw path.
     if rp > 1200:
-        pygame.draw.circle(surface, C_OCEAN, (cx, cy), rp)
-        pygame.draw.circle(surface, (60, 130, 200), (cx, cy), rp, 2)
-        for i, (col, a, wf) in enumerate([
-            ((18, 45, 85), 32, 0.08),
-            ((20, 60, 120), 26, 0.06),
-            ((30, 95, 190), 20, 0.04),
-        ]):
-            rr = int(rp * (1.0 + wf))
-            if rr < 20000:
-                pygame.draw.circle(surface, (*col, a), (cx, cy), rr, max(1, int(rp * 0.01)))
+        pygame.draw.circle(surface, (15, 70, 135), (cx, cy), rp)
+        pygame.draw.circle(surface, (18, 95, 170), (cx - int(rp * 0.16), cy - int(rp * 0.12)), int(rp * 0.82))
+        pygame.draw.circle(surface, (80, 170, 235), (cx - int(rp * 0.30), cy - int(rp * 0.25)), int(rp * 0.28))
+        pygame.draw.circle(surface, (70, 130, 190), (cx, cy), rp, max(2, int(rp * 0.004)))
         return
 
     rp_key = max(5, int(rp // 4) * 4)
     ticks = pygame.time.get_ticks()
     sun_a = (ticks / 22000.0) % (math.tau)
     sun_bucket = int((sun_a / math.tau) * 24) % 24
-    rot_a = (ticks / 65000.0) % (math.tau)
+    rot_bucket = int(((ticks / 65000.0) % 1.0) * 36) % 36
+    rot_a = (rot_bucket / 36.0) * math.tau
 
     cache = getattr(draw_earth_detailed, "_cache", None)
     if cache is None:
         cache = {}
         setattr(draw_earth_detailed, "_cache", cache)
 
-    key = (rp_key, sun_bucket)
+    key = ("overlay_highlight_v1", rp_key, sun_bucket, rot_bucket)
     spr = cache.get(key)
     if spr is None:
         pad = max(6, int(rp_key * 0.02))
@@ -1142,11 +1194,11 @@ def draw_earth_detailed(surface, cam_x, cam_y, zoom):
         scx = size // 2
         scy = size // 2
 
-        pygame.draw.circle(spr, (18, 45, 85, 35), (scx, scy), int(rp_key * 1.08), max(1, int(rp_key * 0.03)))
-        pygame.draw.circle(spr, (20, 60, 120, 28), (scx, scy), int(rp_key * 1.05), max(1, int(rp_key * 0.02)))
-        pygame.draw.circle(spr, (30, 95, 190, 20), (scx, scy), int(rp_key * 1.03), max(1, int(rp_key * 0.015)))
+        pygame.draw.circle(spr, (70, 170, 255, 42), (scx, scy), int(rp_key * 1.09), max(1, int(rp_key * 0.035)))
+        pygame.draw.circle(spr, (90, 200, 255, 34), (scx, scy), int(rp_key * 1.05), max(1, int(rp_key * 0.02)))
 
-        pygame.draw.circle(spr, C_OCEAN, (scx, scy), rp_key)
+        pygame.draw.circle(spr, (12, 70, 135), (scx, scy), rp_key)
+        pygame.draw.circle(spr, (16, 95, 165, 120), (scx - int(rp_key * 0.12), scy - int(rp_key * 0.10)), int(rp_key * 0.88))
 
         continents = [
             (0.15, 0.3, 0.25, 0.35, C_LAND1), (-0.1, -0.2, 0.2, 0.25, C_LAND2),
@@ -1165,7 +1217,8 @@ def draw_earth_detailed(surface, cam_x, cam_y, zoom):
             lh = max(2, int(hf * rp_key))
             if lw < 2400 and lh < 2400:
                 s = pygame.Surface((lw, lh), pygame.SRCALPHA)
-                pygame.draw.ellipse(s, (*col, 210), (0, 0, lw, lh))
+                pygame.draw.ellipse(s, (*col, 230), (0, 0, lw, lh))
+                pygame.draw.ellipse(s, (120, 170, 70, 42), (lw * 0.14, lh * 0.10, lw * 0.72, lh * 0.66))
                 spr.blit(s, (lx, ly))
 
         random.seed((rp_key * 131) ^ (sun_bucket * 17))
@@ -1175,26 +1228,18 @@ def draw_earth_detailed(surface, cam_x, cam_y, zoom):
             ew = random.randint(int(rp_key * 0.10), int(rp_key * 0.26))
             eh = random.randint(int(rp_key * 0.05), int(rp_key * 0.14))
             cloud = pygame.Surface((ew, eh), pygame.SRCALPHA)
-            pygame.draw.ellipse(cloud, (245, 250, 255, 40), (0, 0, ew, eh))
+            pygame.draw.ellipse(cloud, (245, 250, 255, 72), (0, 0, ew, eh))
             spr.blit(cloud, (ex - ew // 2, ey - eh // 2))
 
-        shade = pygame.Surface((size, size), pygame.SRCALPHA)
         sdx = math.cos((sun_bucket / 24.0) * math.tau)
-        for x in range(size):
-            nx = (x - scx) / max(1.0, float(rp_key))
-            lit = 0.18 + 0.82 * max(0.0, min(1.0, 0.5 + 0.5 * nx * sdx))
-            v = int(55 + 200 * lit)
-            pygame.draw.line(shade, (v, v, v, 255), (x, 0), (x, size - 1))
-        mask = pygame.Surface((size, size), pygame.SRCALPHA)
-        pygame.draw.circle(mask, (255, 255, 255, 255), (scx, scy), rp_key)
-        shade.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        spr.blit(shade, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        sdy = math.sin((sun_bucket / 24.0) * math.tau)
+        hx = int(scx + rp_key * 0.28 * sdx)
+        hy = int(scy + rp_key * 0.18 * sdy)
+        highlight = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.circle(highlight, (255, 255, 255, 22), (hx, hy), int(rp_key * 0.42))
+        spr.blit(highlight, (0, 0))
 
-        hx = int(scx + rp_key * 0.30 * sdx)
-        hy = int(scy - rp_key * 0.10)
-        pygame.draw.circle(spr, (255, 255, 255, 28), (hx, hy), int(rp_key * 0.55))
-
-        pygame.draw.circle(spr, (60, 130, 200, 220), (scx, scy), rp_key, max(1, int(rp_key * 0.006)))
+        pygame.draw.circle(spr, (120, 210, 255, 180), (scx, scy), rp_key, max(1, int(rp_key * 0.006)))
         cache[key] = spr
 
     surface.blit(spr, (cx - spr.get_width() // 2, cy - spr.get_height() // 2))
@@ -1211,7 +1256,7 @@ def draw_ground_and_pad(surface, cam_x, cam_y, zoom):
             start_x = VIEW_X - off - tw
             start_y = max(gy, 0)
             for yy in range(start_y, VIEW_H, th):
-                for xx in range(start_x, WIDTH, tw):
+                for xx in range(start_x, VIEW_RIGHT, tw):
                     surface.blit(tex, (xx, yy))
         else:
             pygame.draw.rect(surface, C_GROUND, (VIEW_X, gy, VIEW_W, gh + 10))
@@ -1287,7 +1332,7 @@ def draw_clouds_simple(surface, cam_x, cam_y, zoom, cloud_data):
         sx, sy = world_to_screen(cx, cy + EARTH_RADIUS, cam_x, cam_y, zoom)
         pw = int(cw * zoom)
         ph = int(ch * zoom)
-        if 2 < pw < 1500 and VIEW_X < sx < WIDTH and 0 < sy < VIEW_H:
+        if 2 < pw < 1500 and VIEW_X < sx < VIEW_RIGHT and 0 < sy < VIEW_H:
             pygame.draw.ellipse(surface, (235, 240, 250),
                                 (sx - pw // 2, sy - ph // 2, pw, ph))
 
@@ -1298,7 +1343,7 @@ def draw_rocket(surface, rocket, cam_x, cam_y, zoom, phase, deploy_state=None):
     stage = rocket.current_stage_index
     base_sx, base_sy = world_to_screen(rx, ry, cam_x, cam_y, zoom)
 
-    if base_sy > VIEW_H + 200 or base_sx < VIEW_X - 300 or base_sx > WIDTH + 300:
+    if base_sy > VIEW_H + 200 or base_sx < VIEW_X - 300 or base_sx > VIEW_RIGHT + 300:
         return
 
     if phase == FlightPhase.SECO:
@@ -1469,7 +1514,7 @@ def draw_debris(surface, debris, cam_x, cam_y, zoom, dt_real):
         d["rot"] = (d["rot"] + d["omega"] * dt_real) % 360
 
         sx, sy = world_to_screen(d["x"], d["y"], cam_x, cam_y, zoom)
-        if VIEW_X < sx < WIDTH and 0 < sy < VIEW_H:
+        if VIEW_X < sx < VIEW_RIGHT and 0 < sy < VIEW_H:
             if d.get("kind") == "fairing":
                 w_m, h_m = 3.2, 12.0
                 col = (220, 222, 226)
@@ -1587,7 +1632,7 @@ def draw_sidebar(surface, font, font_sm, font_tiny, rocket, world,
 
 # ── Bottom Dashboard ─────────────────────────────────────
 def draw_dashboard(surface, font, font_sm, font_tiny, rocket, world,
-                   graphs, traj_map, orbit_id):
+                   graphs, traj_map, orbit_id, deploy_state=None):
     dy = VIEW_H
     pygame.draw.rect(surface, C_DASH_BG, (0, dy, WIDTH, DASH_H))
     pygame.draw.line(surface, C_DASH_LINE, (0, dy), (WIDTH, dy), 2)
@@ -1696,75 +1741,119 @@ def draw_dashboard(surface, font, font_sm, font_tiny, rocket, world,
     surface.blit(font_tiny.render(f"MET  T+ {met_str}", True, C_TEXT), (sx, sy)); sy += 14
     surface.blit(font_tiny.render(f"WARP {world.time_warp}x", True, C_TEXT), (sx, sy))
 
-    # ── Column 9: Physics Insights ──────────────────────
+    # ── Column 9: Live physics graphs ───────────────────
+    pg_x = sx + 210
+    pg_y = dy + 10
+    pg_w = max(360, WIDTH - pg_x - 18)
+    pygame.draw.rect(surface, (8, 12, 20), (pg_x, pg_y, pg_w, DASH_H - 20), border_radius=6)
+    pygame.draw.rect(surface, C_DASH_LINE, (pg_x, pg_y, pg_w, DASH_H - 20), 1, border_radius=6)
+    surface.blit(font_sm.render("FORMULA OUTPUT GRAPHS", True, ACCENT_GOLD), (pg_x + 10, pg_y + 8))
+
+    gw = (pg_w - 30) // 2
+    gh = 102
+    gy0 = pg_y + 32
+    graph_specs = [
+        ("twr_g", "T/W Ratio", "T/W", C_GREEN_GO),
+        ("drag_g", "Drag Force", "kN", C_RED),
+        ("accel_g", "Net Accel.", "m/s2", C_MAGENTA),
+        ("rho_g", "Air Density", "kg/m3", (255, 140, 0)),
+    ]
+    for idx, (key, _label, _unit, _color) in enumerate(graph_specs):
+        rx = pg_x + 10 + (idx % 2) * (gw + 10)
+        ry = gy0 + (idx // 2) * (gh + 10)
+        graphs[key].draw(surface, pygame.Rect(rx, ry, gw, gh), font_tiny)
+
+
+def draw_physics_sidebar(surface, font, font_sm, font_tiny, rocket, world, deploy_state=None):
+    x0 = VIEW_RIGHT
+    pygame.draw.rect(surface, C_SIDE_BG, (x0, 0, RIGHT_W, VIEW_H))
+    pygame.draw.line(surface, C_DASH_LINE, (x0, 0), (x0, VIEW_H), 1)
+
     phys = compute_ascent_physics(rocket, world)
-    vehicle_is_custom = getattr(world.mission, "vehicle_id", "") == "CUSTOM"
-    panel_x = sx + 135
-    panel_y = dy + 10
-    panel_w = max(330, WIDTH - panel_x - 14)
-    panel_h = DASH_H - 20
-    panel_border = ACCENT_GOLD if phys["twr"] >= 1.0 or world.phase == FlightPhase.PRELAUNCH else C_RED
+    stage_panel = get_ascent_stage_panel(world, deploy_state)
+    border = C_CYAN if phys["twr"] >= 1.0 or world.phase in (FlightPhase.PRELAUNCH, FlightPhase.SECO) else C_RED
 
-    pygame.draw.rect(surface, (8, 12, 20), (panel_x, panel_y, panel_w, panel_h), border_radius=6)
-    pygame.draw.rect(surface, panel_border, (panel_x, panel_y, panel_w, panel_h), 2, border_radius=6)
-    pygame.draw.line(surface, C_DASH_LINE, (panel_x + 10, panel_y + 31), (panel_x + panel_w - 10, panel_y + 31), 1)
+    margin = 12
+    box = pygame.Rect(x0 + margin, 12, RIGHT_W - margin * 2, VIEW_H - 24)
+    pygame.draw.rect(surface, (8, 12, 20), box, border_radius=6)
+    pygame.draw.rect(surface, border, box, 2, border_radius=6)
 
-    px = panel_x + 12
-    py = panel_y + 9
-    title = "CUSTOM ASCENT PHYSICS" if vehicle_is_custom else "ASCENT PHYSICS"
-    surface.blit(font_sm.render(title, True, ACCENT_GOLD), (px, py)); py += 18
+    x = box.x + 12
+    y = box.y + 10
+    max_y = box.bottom - 12
+    max_w = box.w - 24
 
-    mid_x = panel_x + panel_w // 2
-    pygame.draw.line(surface, C_DASH_LINE, (mid_x, panel_y + 38), (mid_x, panel_y + panel_h - 10), 1)
+    surface.blit(font.render("ASCENT PHYSICS", True, ACCENT_GOLD), (x, y))
+    y += 27
 
-    def line_at(x, y, text, color=C_TEXT, step=12):
-        if y <= panel_y + panel_h - 14:
-            surface.blit(font_tiny.render(text, True, color), (x, y))
-        return y + step
+    badge_surf = font_sm.render(stage_panel["badge"], True, (4, 18, 28))
+    badge_rect = pygame.Rect(x, y, min(max_w, badge_surf.get_width() + 18), 24)
+    pygame.draw.rect(surface, C_CYAN, badge_rect, border_radius=4)
+    pygame.draw.rect(surface, (130, 230, 255), badge_rect, 1, border_radius=4)
+    surface.blit(badge_surf, (badge_rect.x + 9, badge_rect.y + 5))
+    y += 34
 
-    left_x = panel_x + 12
-    right_x = mid_x + 12
-    left_y = panel_y + 42
-    right_y = panel_y + 42
+    def line(text, color=C_TEXT, step=14, fnt=None):
+        nonlocal y
+        if y <= max_y:
+            surface.blit((fnt or font_tiny).render(text, True, color), (x, y))
+        y += step
 
-    left_y = line_at(left_x, left_y, "FORMULAS USED", (160, 170, 180), 14)
-    left_y = line_at(left_x, left_y, "F = G m1 m2 / d^2", ACCENT_GOLD)
-    left_y = line_at(left_x, left_y, "Fg = G M m / r^2", ACCENT_GOLD)
-    left_y = line_at(left_x, left_y, "g = GM / r^2", ACCENT_GOLD)
-    left_y += 4
-    left_y = line_at(left_x, left_y, "ΣF = T + D + W", C_YELLOW)
-    left_y = line_at(left_x, left_y, "a = ΣF / m", C_GREEN_GO)
-    left_y = line_at(left_x, left_y, "v_new = v_old + a Δt", C_CYAN)
-    left_y = line_at(left_x, left_y, "x_new = x_old + v_new Δt", C_CYAN)
-    left_y += 4
-    left_y = line_at(left_x, left_y, "Vx = V cos(θ)", C_MAGENTA)
-    left_y = line_at(left_x, left_y, "Vy = V sin(θ)", C_MAGENTA)
-    left_y = line_at(left_x, left_y, "Δv = Isp g₀ ln(m₀/mf)", C_YELLOW)
+    def wrapped(text, color=C_TEXT, step=13):
+        nonlocal y
+        words = text.split()
+        current = ""
+        for word in words:
+            trial = word if not current else f"{current} {word}"
+            if font_tiny.size(trial)[0] <= max_w:
+                current = trial
+            else:
+                if current:
+                    line(current, color, step)
+                current = word
+        if current:
+            line(current, color, step)
 
-    right_y = line_at(right_x, right_y, "LIVE VALUES", (160, 170, 180), 14)
-    right_y = line_at(right_x, right_y, f"T={phys['thrust']/1000:,.1f} kN  W={phys['weight']/1000:,.1f} kN", C_YELLOW)
-    right_y = line_at(right_x, right_y, f"D={phys['drag']/1000:,.2f} kN  T/W={phys['twr']:.2f}", C_RED)
-    right_y = line_at(right_x, right_y, f"T↑={phys['thrust_radial']/1000:+.1f}  T→={phys['thrust_tangent']/1000:+.1f} kN")
-    right_y = line_at(right_x, right_y, f"D↑={phys['drag_radial']/1000:+.2f}  D→={phys['drag_tangent']/1000:+.2f} kN")
-    right_y += 4
-    right_y = line_at(right_x, right_y, f"ρ={phys['rho']:.4f} kg/m³  q={phys['q']/1000:.2f} kPa", (255, 140, 0))
-    right_y = line_at(right_x, right_y, f"Cd={rocket.drag_coefficient:.2f}  A={rocket.cross_sectional_area:.2f} m²")
-    right_y += 4
-    right_y = line_at(right_x, right_y, f"a↑={phys['a_radial']:+.2f} m/s²  a→={phys['a_tangent']:+.2f}", C_GREEN_GO)
-    right_y = line_at(right_x, right_y, f"|a|={phys['a_net']:.2f} m/s²  m={phys['mass']/1000:.2f} t")
-    right_y = line_at(right_x, right_y, f"v↑={phys['v_radial']:.1f} m/s  v→={phys['v_tangent']:.1f}", C_CYAN)
-    right_y = line_at(right_x, right_y, f"γ flight path={phys['gamma']:.1f}°")
-    right_y = line_at(right_x, right_y, f"ṁ={phys['mdot']:.1f} kg/s  Isp≈{phys['isp']:.0f} s")
-    right_y += 4
+    line(stage_panel["subtitle"].upper(), C_CYAN, 17, font_sm)
+    pygame.draw.line(surface, C_DASH_LINE, (x, y), (box.right - 12, y), 1)
+    y += 10
 
+    line("STAGE FORMULAS", (160, 170, 180), 16, font_sm)
+    for text, color in stage_panel["formulas"]:
+        wrapped(text, color, 13)
+    y += 7
+
+    line("WHY THIS STAGE MATTERS", (160, 170, 180), 16, font_sm)
+    wrapped(stage_panel["note"], C_TEXT, 13)
+    y += 9
+
+    line("LIVE VALUES", (160, 170, 180), 16, font_sm)
+    live_lines = [
+        (f"T={phys['thrust']/1000:,.1f} kN", C_YELLOW),
+        (f"W={phys['weight']/1000:,.1f} kN", C_YELLOW),
+        (f"D={phys['drag']/1000:,.2f} kN", C_RED),
+        (f"T/W={phys['twr']:.2f}", C_RED if phys["twr"] < 1.0 else C_GREEN_GO),
+        (f"a_up={phys['a_radial']:+.2f} m/s^2", C_GREEN_GO),
+        (f"a_side={phys['a_tangent']:+.2f} m/s^2", C_GREEN_GO),
+        (f"v_up={phys['v_radial']:.1f} m/s", C_CYAN),
+        (f"v_side={phys['v_tangent']:.1f} m/s", C_CYAN),
+        (f"q={phys['q']/1000:.2f} kPa", (255, 140, 0)),
+        (f"rho={phys['rho']:.4f} kg/m^3", (255, 140, 0)),
+        (f"mdot={phys['mdot']:.1f} kg/s", C_TEXT),
+        (f"Isp~{phys['isp']:.0f} s", C_TEXT),
+    ]
+    for text, color in live_lines:
+        line(text, color)
+
+    y += 4
     if phys["q"] / 1000.0 > 25.0:
-        line_at(right_x, right_y, "Max-Q: throttle/pitch loads critical", C_RED)
+        wrapped("Max-Q: throttle and pitch loads are critical.", C_RED)
     elif phys["twr"] < 1.0 and world.phase != FlightPhase.PRELAUNCH:
-        line_at(right_x, right_y, "Lift issue: T/W below 1", C_RED)
-    elif alt < 100000:
-        line_at(right_x, right_y, "Ascent: vertical speed -> orbital speed", C_TEXT)
+        wrapped("Lift issue: T/W below 1, so the rocket cannot climb.", C_RED)
+    elif rocket.get_altitude() < 100000:
+        wrapped("Ascent: converting vertical speed into orbital speed.", C_TEXT)
     else:
-        line_at(right_x, right_y, "Vacuum: drag ~0, gravity turn dominates", C_TEXT)
+        wrapped("Vacuum: drag is near zero; gravity turn dominates.", C_TEXT)
 
 
 def draw_hud(surface, font, font_lg, world, phase, vehicle_name, orbit_id):
@@ -1778,7 +1867,7 @@ def draw_hud(surface, font, font_lg, world, phase, vehicle_name, orbit_id):
     # Top-right: vehicle + orbit badge
     orb_col = ORBITS.get(orbit_id, {}).get("color", C_CYAN)
     badge = font.render(f"{vehicle_name}  ·  {orbit_id}", True, orb_col)
-    bx = WIDTH - badge.get_width() - 16
+    bx = VIEW_RIGHT - badge.get_width() - 16
     pygame.draw.rect(surface, (12, 16, 24), (bx - 6, 4, badge.get_width() + 12, 24), border_radius=4)
     pygame.draw.rect(surface, orb_col, (bx - 6, 4, badge.get_width() + 12, 24), 1, border_radius=4)
     surface.blit(badge, (bx, 8))
@@ -1854,6 +1943,10 @@ def run_app():
             "gforce": SciGraph(120, "G-Force",         "g",   C_MAGENTA, y_min_fixed=0),
             "thrust": SciGraph(120, "Thrust",          "kN",  C_YELLOW,  y_min_fixed=0),
             "fuel_g": SciGraph(120, "Propellant",      "%",   C_GREEN_GO, y_min_fixed=0, y_max_fixed=100),
+            "twr_g":  SciGraph(120, "T/W Ratio",       "T/W", C_GREEN_GO, y_min_fixed=0),
+            "drag_g": SciGraph(120, "Drag Force",      "kN",  C_RED, y_min_fixed=0),
+            "accel_g": SciGraph(120, "Net Accel.",     "m/s2", C_MAGENTA),
+            "rho_g":  SciGraph(120, "Air Density",     "kg/m3", (255, 140, 0), y_min_fixed=0),
             "gforce_val": 1.0,
         }
 
@@ -2115,6 +2208,11 @@ def run_app():
             stg = rocket.current_stage_index
             tkn = (world.last_thrust_n / 1000.0) if hasattr(world, "last_thrust_n") else 0.0
             graphs["thrust"].push(tkn)
+            phys = compute_ascent_physics(rocket, world)
+            graphs["twr_g"].push(phys["twr"])
+            graphs["drag_g"].push(phys["drag"] / 1000.0)
+            graphs["accel_g"].push(phys["a_net"])
+            graphs["rho_g"].push(phys["rho"])
             if stg < len(rocket.stages):
                 fs = rocket.stages[stg].fuel_system
                 graphs["fuel_g"].push(fs.fuel / (fs.initial_fuel + 0.001) * 100)
@@ -2131,6 +2229,7 @@ def run_app():
 
         if alt > 20000:
             draw_earth_detailed(screen, cam_x, cam_y, zoom)
+            draw_gravity_field(screen, cam_x, cam_y, zoom, alt)
             draw_moon(screen, cam_x, cam_y, zoom)
         else:
             draw_ground_and_pad(screen, cam_x, cam_y, zoom)
@@ -2143,8 +2242,10 @@ def run_app():
 
         draw_sidebar(screen, font, font_sm, font_tiny, rocket, world,
                      manual_throttle, manual_pitch, cam_mode, vehicle_name)
+        draw_physics_sidebar(screen, font, font_sm, font_tiny, rocket, world,
+                             deploy_state=deploy_state)
         draw_dashboard(screen, font, font_sm, font_tiny, rocket, world,
-                       graphs, traj, oid)
+                       graphs, traj, oid, deploy_state=deploy_state)
         draw_hud(screen, font, font_lg, world, world.phase, vehicle_name, oid)
 
         pygame.display.flip()
