@@ -127,7 +127,95 @@ class CustomRocketBuilder:
         
         self.active_field = 0
         self.rects = []
+        self.compat_issues = {}
         self._update_stats()
+
+    def _field_float(self, idx, default=0.0):
+        try:
+            return float(self.fields[idx]["val"])
+        except (TypeError, ValueError):
+            return default
+
+    def _field_int(self, idx, default=0):
+        try:
+            return int(float(self.fields[idx]["val"]))
+        except (TypeError, ValueError):
+            return default
+
+    def _mark_issue(self, issues, idx, reason):
+        issues.setdefault(idx, reason)
+
+    def _build_compatibility_issues(self):
+        """Return field-index issues that can stop the custom rocket from climbing."""
+        issues = {}
+
+        s1_fuel_pct = self._field_float(2, 100.0)
+        s1_hp_pct = self._field_float(4, 100.0)
+        s1_engine_count = self._field_int(5, 1)
+        s2_fuel_pct = self._field_float(7, 100.0)
+        s2_hp_pct = self._field_float(9, 100.0)
+        cd = self._field_float(11, self.custom_data.get("drag_coefficient", 0.4))
+        area = self._field_float(12, self.custom_data.get("cross_sectional_area", 10.0))
+
+        e1 = ENGINES[self.engine_ids[self.sel_parts["s1_engine"]]]
+        e2 = ENGINES[self.engine_ids[self.sel_parts["s2_engine"]]]
+
+        if s1_fuel_pct <= 0:
+            self._mark_issue(issues, 2, "Stage 1 has no propellant.")
+        elif s1_fuel_pct > 150:
+            self._mark_issue(issues, 2, "Stage 1 fuel load is unrealistically heavy.")
+
+        if s2_fuel_pct <= 0:
+            self._mark_issue(issues, 7, "Stage 2 has no propellant.")
+        elif s2_fuel_pct > 150:
+            self._mark_issue(issues, 7, "Stage 2 fuel load is too heavy for ascent.")
+
+        if s1_hp_pct <= 0:
+            self._mark_issue(issues, 4, "Stage 1 engines are disabled.")
+        if s2_hp_pct <= 0:
+            self._mark_issue(issues, 9, "Stage 2 engine is disabled.")
+
+        if s1_engine_count < 1:
+            self._mark_issue(issues, 5, "Stage 1 needs at least one engine.")
+        elif s1_engine_count > 9:
+            self._mark_issue(issues, 5, "Too many first-stage engines for this model.")
+
+        if e1.get("thrust_sl", 0.0) <= 0:
+            self._mark_issue(issues, 3, "Vacuum engine cannot lift off at sea level.")
+        if e2.get("thrust_vac", 0.0) <= 0:
+            self._mark_issue(issues, 8, "Upper stage needs vacuum thrust.")
+
+        if cd <= 0:
+            self._mark_issue(issues, 11, "Drag coefficient must be positive.")
+        elif cd > 0.75:
+            self._mark_issue(issues, 11, "High drag coefficient can prevent climb.")
+
+        if area <= 0:
+            self._mark_issue(issues, 12, "Cross-section area must be positive.")
+        elif area > 25.0:
+            self._mark_issue(issues, 12, "Large area creates excessive drag.")
+
+        if self.s1_twr < 1.0:
+            self._mark_issue(issues, 3, "Not enough sea-level thrust for liftoff.")
+            self._mark_issue(issues, 4, "Increase Stage 1 engine power.")
+            self._mark_issue(issues, 5, "Add Stage 1 engines or reduce mass.")
+            self._mark_issue(issues, 1, "Stage 1 tank may be too heavy.")
+            self._mark_issue(issues, 2, "Stage 1 propellant mass is too heavy.")
+            self._mark_issue(issues, 6, "Upper stage tank is too heavy for Stage 1.")
+            self._mark_issue(issues, 7, "Upper stage fuel is overloading liftoff.")
+            self._mark_issue(issues, 10, "Fairing mass contributes to low TWR.")
+        elif self.s1_twr < 1.2:
+            self._mark_issue(issues, 3, "Liftoff TWR is marginal.")
+            self._mark_issue(issues, 4, "More Stage 1 thrust recommended.")
+            self._mark_issue(issues, 5, "More engines may be needed.")
+
+        target_dv = 7600.0
+        if self.total_dv < target_dv:
+            self._mark_issue(issues, 2, "Low total delta-v.")
+            self._mark_issue(issues, 7, "Low total delta-v.")
+            self._mark_issue(issues, 8, "Upper stage may lack orbital energy.")
+
+        return issues
 
     def _update_stats(self):
         """Calculate dry mass, propellant mass, thrust, and delta-v based on selected parts."""
@@ -224,6 +312,7 @@ class CustomRocketBuilder:
             "delta_v_m_s": float(self.total_dv),
             "total_mass_kg": float(self.total_mass),
         }
+        self.compat_issues = self._build_compatibility_issues()
 
     def _draw_rocket_preview(self, rect):
         """Draw a simple 2D visualization of the rocket based on selected parts."""
@@ -308,6 +397,105 @@ class CustomRocketBuilder:
         self.screen.blit(self.f_tiny.render(f"S2: {t2['name']}", True, TEXT_DIM), (cx + w // 2 + 15, cy - s1_h - s2_h // 2))
         self.screen.blit(self.f_tiny.render(f"S1: {t1['name']}", True, TEXT_DIM), (cx + w // 2 + 15, cy - s1_h // 2))
 
+    def _draw_wrapped_text(self, text, font, color, x, y, max_width, line_h):
+        words = text.split()
+        line = ""
+        for word in words:
+            trial = word if not line else f"{line} {word}"
+            if font.size(trial)[0] <= max_width:
+                line = trial
+            else:
+                if line:
+                    self.screen.blit(font.render(line, True, color), (x, y))
+                    y += line_h
+                line = word
+        if line:
+            self.screen.blit(font.render(line, True, color), (x, y))
+            y += line_h
+        return y
+
+    def _draw_ascent_physics_box(self, rect):
+        has_issues = bool(self.compat_issues)
+        border = ACCENT_RED if has_issues else ACCENT_GRN
+        bg = (18, 10, 16) if has_issues else PANEL_DARK
+
+        if has_issues:
+            pulse = 0.55 + 0.45 * math.sin(pygame.time.get_ticks() * 0.006)
+            glow = pygame.Surface((rect.w + 28, rect.h + 28), pygame.SRCALPHA)
+            pygame.draw.rect(
+                glow,
+                (*ACCENT_RED, int(60 + 50 * pulse)),
+                (0, 0, rect.w + 28, rect.h + 28),
+                border_radius=14,
+            )
+            self.screen.blit(glow, (rect.x - 14, rect.y - 14))
+
+        draw_rounded_rect(self.screen, bg, rect, radius=10, border_color=border, border_w=2 if has_issues else 1)
+
+        x = rect.x + 16
+        y = rect.y + 16
+        max_w = rect.w - 32
+
+        title = "ASCENT PHYSICS CHECK"
+        self.screen.blit(self.f_head.render(title, True, border), (x, y)); y += 30
+
+        status = "NOT COMPATIBLE" if has_issues else "READY TO CLIMB"
+        self.screen.blit(self.f_body.render(status, True, border), (x, y)); y += 26
+
+        twr_col = ACCENT_GRN if self.s1_twr >= 1.2 else ACCENT_RED
+        stats = [
+            ("T/W = Thrust / Weight", f"{self.s1_twr:.2f}"),
+            ("Mass", f"{self.total_mass:,.0f} kg"),
+            ("Delta-v", f"{self.total_dv:,.0f} m/s"),
+        ]
+        for label, value in stats:
+            self.screen.blit(self.f_tiny.render(label, True, TEXT_DIM), (x, y))
+            self.screen.blit(self.f_small.render(value, True, twr_col if label.startswith("T/W") else TEXT_HI), (x + 150, y - 1))
+            y += 18
+
+        y += 8
+        self.screen.blit(self.f_small.render("WHY IT FAILS", True, ACCENT_RED if has_issues else TEXT_DIM), (x, y)); y += 20
+
+        if has_issues:
+            unique_reasons = list(dict.fromkeys(self.compat_issues.values()))
+            for reason in unique_reasons[:8]:
+                y = self._draw_wrapped_text(f"! {reason}", self.f_small, ACCENT_RED, x, y, max_w, 15)
+                y += 4
+        else:
+            y = self._draw_wrapped_text(
+                "The first stage has enough thrust to overcome weight, and the selected mass/drag values are within the current simulation limits.",
+                self.f_small,
+                ACCENT_GRN,
+                x,
+                y,
+                max_w,
+                15,
+            )
+
+        y += 10
+        self.screen.blit(self.f_small.render("WHAT TO CHANGE", True, ACCENT_GOLD), (x, y)); y += 20
+        if self.s1_twr < 1.0:
+            tips = [
+                "Increase S1 engine HP or engine count.",
+                "Reduce S2 fuel load or use a lighter upper tank.",
+                "Reduce fairing, area, or drag coefficient.",
+            ]
+        elif self.compat_issues:
+            tips = [
+                "Fix the red glowing fields first.",
+                "Aim for liftoff T/W above 1.20.",
+                "Keep fuel load near 100% unless testing extremes.",
+            ]
+        else:
+            tips = [
+                "Use the launch view to inspect Max-Q and acceleration.",
+                "For orbit, keep building horizontal velocity after ascent.",
+            ]
+
+        for tip in tips:
+            y = self._draw_wrapped_text(f"- {tip}", self.f_tiny, TEXT_HI, x, y, max_w, 13)
+            y += 3
+
     def draw(self):
         self.screen.fill(BG)
         # Header
@@ -371,6 +559,9 @@ class CustomRocketBuilder:
         draw_rounded_rect(self.screen, PANEL_DARK, (sx2 - 10, sy2 - 10, 360, self.H - 220), radius=10, border_color=BORDER, border_w=1)
         self.screen.blit(self.f_head.render("STAGE 2 & AERO", True, ACCENT_MAG), (sx2, sy2)); sy2 += 35
 
+        physics_rect = pygame.Rect(1425, 100, max(260, self.W - 1455), self.H - 220)
+        self._draw_ascent_physics_box(physics_rect)
+
         self.rects = []
         field_gap = 45
         
@@ -394,10 +585,24 @@ class CustomRocketBuilder:
             self.rects.append(rect)
             
             is_active = (i == self.active_field)
+            has_issue = i in self.compat_issues
             bg_col = (20, 35, 60) if is_active else (14, 20, 32)
-            bord_col = BORDER_SEL if is_active else BORDER
-            
-            draw_rounded_rect(self.screen, bg_col, rect, radius=4, border_color=bord_col, border_w=2 if is_active else 1)
+            if has_issue:
+                bg_col = (44, 13, 18) if not is_active else (60, 20, 28)
+            bord_col = ACCENT_RED if has_issue else BORDER_SEL if is_active else BORDER
+
+            if has_issue:
+                pulse = 0.55 + 0.45 * math.sin(pygame.time.get_ticks() * 0.008)
+                glow = pygame.Surface((rect.w + 26, rect.h + 26), pygame.SRCALPHA)
+                pygame.draw.rect(
+                    glow,
+                    (*ACCENT_RED, int(75 + 65 * pulse)),
+                    (0, 0, rect.w + 26, rect.h + 26),
+                    border_radius=8,
+                )
+                self.screen.blit(glow, (rect.x - 13, rect.y - 13))
+
+            draw_rounded_rect(self.screen, bg_col, rect, radius=4, border_color=bord_col, border_w=2 if (is_active or has_issue) else 1)
             
             if field["type"] == "part":
                 sel_idx = self.sel_parts[field["key"]]
@@ -409,6 +614,10 @@ class CustomRocketBuilder:
                 val_surf = self.f_body.render(field["val"], True, (255, 255, 255) if is_active else TEXT_DIM)
             
             self.screen.blit(val_surf, (rect.x + 8, rect.y + 6))
+
+            if has_issue and is_active:
+                warn = self.compat_issues[i]
+                self.screen.blit(self.f_tiny.render(warn[:42], True, ACCENT_RED), (rect.x, rect.bottom + 3))
 
             if is_active and field["type"] != "part" and (pygame.time.get_ticks() // 500) % 2 == 0:
                 cx = rect.x + 8 + val_surf.get_width()

@@ -20,10 +20,11 @@ from mission.orbit_targets import ORBITS
 from mission.vehicle_database import VEHICLES
 from simulation.world import World
 from physics.constants import EARTH_RADIUS, G, EARTH_MASS
+from physics.drag import get_air_density, compute_drag_force
 from rendering_pygame.vehicle_select import run_selection
 
 # ── Layout ───────────────────────────────────────────────
-WIDTH, HEIGHT = 1440, 900
+WIDTH, HEIGHT = 1720, 900
 SIDE_W  = 185
 DASH_H  = 295          # taller dashboard for proper graphs
 VIEW_X  = SIDE_W
@@ -604,6 +605,194 @@ def world_to_screen(wx, wy, cam_x, cam_y, zoom):
     sx = VIEW_X + VIEW_W // 2 + (wx - cam_x) * zoom
     sy = VIEW_H // 2 - (wy - cam_y) * zoom
     return int(sx), int(sy)
+
+
+def compute_ascent_physics(rocket, world):
+    """Live force-balance terms for explaining the ascent physics."""
+    x, y = rocket.x, rocket.y
+    vx, vy = rocket.vx, rocket.vy
+    r = math.hypot(x, y)
+    mass = rocket.get_total_mass()
+    vel = rocket.get_velocity_mag()
+    alt = rocket.get_altitude()
+    mu = G * EARTH_MASS
+
+    if r > 0:
+        ux_r, uy_r = x / r, y / r
+        ux_t, uy_t = -uy_r, ux_r
+        g = mu / (r * r)
+    else:
+        ux_r, uy_r = 0.0, 1.0
+        ux_t, uy_t = 1.0, 0.0
+        g = 9.80665
+
+    thrust = getattr(world, "last_thrust_n", 0.0)
+    fx_t = thrust * math.cos(rocket.pitch_angle)
+    fy_t = thrust * math.sin(rocket.pitch_angle)
+
+    rho = get_air_density(max(0.0, alt))
+    drag = compute_drag_force(vel, max(0.0, alt), rocket.drag_coefficient, rocket.cross_sectional_area)
+    if vel > 0:
+        fx_d = -drag * vx / vel
+        fy_d = -drag * vy / vel
+    else:
+        fx_d = fy_d = 0.0
+
+    fx_g = -mass * g * ux_r
+    fy_g = -mass * g * uy_r
+    fx_net = fx_t + fx_d + fx_g
+    fy_net = fy_t + fy_d + fy_g
+
+    a_radial = (fx_net * ux_r + fy_net * uy_r) / mass if mass > 0 else 0.0
+    a_tangent = (fx_net * ux_t + fy_net * uy_t) / mass if mass > 0 else 0.0
+    a_net = math.hypot(fx_net, fy_net) / mass if mass > 0 else 0.0
+
+    v_radial = vx * ux_r + vy * uy_r
+    v_tangent = vx * ux_t + vy * uy_t
+    gamma = math.degrees(math.atan2(v_radial, abs(v_tangent))) if vel > 0 else 90.0
+
+    thrust_radial = fx_t * ux_r + fy_t * uy_r
+    thrust_tangent = fx_t * ux_t + fy_t * uy_t
+    drag_radial = fx_d * ux_r + fy_d * uy_r
+    drag_tangent = fx_d * ux_t + fy_d * uy_t
+
+    stg = rocket.current_stage_index
+    mdot = 0.0
+    isp = 0.0
+    if stg < len(rocket.stages):
+        stage = rocket.stages[stg]
+        if stage.active and thrust > 0.0:
+            ref = max(stage.thrust_vac, stage.thrust_sl, 1.0)
+            mdot = stage.burn_rate * max(0.0, min(1.25, thrust / ref))
+            isp = thrust / (mdot * 9.80665) if mdot > 0 else 0.0
+
+    return {
+        "mass": mass,
+        "g": g,
+        "rho": rho,
+        "q": 0.5 * rho * vel * vel,
+        "thrust": thrust,
+        "weight": mass * g,
+        "drag": drag,
+        "twr": thrust / (mass * g) if mass > 0 and g > 0 else 0.0,
+        "a_radial": a_radial,
+        "a_tangent": a_tangent,
+        "a_net": a_net,
+        "v_radial": v_radial,
+        "v_tangent": v_tangent,
+        "gamma": gamma,
+        "thrust_radial": thrust_radial,
+        "thrust_tangent": thrust_tangent,
+        "drag_radial": drag_radial,
+        "drag_tangent": drag_tangent,
+        "mdot": mdot,
+        "isp": isp,
+    }
+
+
+def get_ascent_stage_panel(world, deploy_state=None):
+    """Presentation text for the right-side physics box."""
+    phase = world.phase
+    rocket = world.rocket
+    stage_idx = rocket.current_stage_index
+    deploy_active = bool(deploy_state and deploy_state.get("active"))
+
+    if phase == FlightPhase.PRELAUNCH:
+        return {
+            "badge": "[LAUNCH]",
+            "subtitle": "Ready for liftoff",
+            "formulas": [
+                ("Check liftoff condition:", (160, 170, 180)),
+                ("T/W = F_thrust / (m g)", C_CYAN),
+                ("Launch if T/W > 1", C_GREEN_GO),
+                ("F_g = G M_E m / r^2", ACCENT_GOLD),
+                ("g = G M_E / r^2", ACCENT_GOLD),
+            ],
+            "note": "Before launch, the rocket must produce more upward thrust than its weight.",
+        }
+
+    if phase in (FlightPhase.LIFTOFF, FlightPhase.MAX_Q, FlightPhase.GRAVITY_TURN) and stage_idx == 0:
+        return {
+            "badge": "[FIRST STAGE BURN]",
+            "subtitle": "Fuel burns, mass decreases",
+            "formulas": [
+                ("Rocket acceleration:", (160, 170, 180)),
+                ("a = (F_thrust - F_gravity - F_drag) / m", C_GREEN_GO),
+                ("m(t) = m0 - mdot t", C_YELLOW),
+                ("F_drag = 1/2 rho v^2 Cd A", C_RED),
+                ("v_new = v_old + a Dt", C_CYAN),
+                ("x_new = x_old + v_new Dt", C_CYAN),
+            ],
+            "note": "Stage 1 pushes hardest near the ground while drag and gravity are largest.",
+        }
+
+    if phase in (FlightPhase.BOOSTER_BURNOUT, FlightPhase.FAIRING_SEP):
+        return {
+            "badge": "[STAGE 1 SEPARATION]",
+            "subtitle": "First stage separates",
+            "formulas": [
+                ("Instant mass change:", (160, 170, 180)),
+                ("m_new = m_old - m_stage1", C_GREEN_GO),
+                ("v_new = v_old", C_CYAN),
+                ("position is continuous", C_TEXT),
+                ("only mass changes instantly", C_TEXT),
+            ],
+            "note": "The separated stage is removed from the vehicle mass, so the next stage accelerates more easily.",
+        }
+
+    if phase == FlightPhase.SECOND_STAGE_BURN or (stage_idx == 1 and phase != FlightPhase.SECO):
+        return {
+            "badge": "[SECOND STAGE BURN]",
+            "subtitle": "Second stage accelerates",
+            "formulas": [
+                ("Acceleration again:", (160, 170, 180)),
+                ("a = (F_thrust - F_gravity - F_drag) / m", C_GREEN_GO),
+                ("m(t) = m0 - mdot t", C_YELLOW),
+                ("Vx = V cos(theta)", C_MAGENTA),
+                ("Vy = V sin(theta)", C_MAGENTA),
+                ("Dv = Isp g0 ln(m0/mf)", C_YELLOW),
+            ],
+            "note": "The second stage turns velocity sideways to build orbital speed.",
+        }
+
+    if phase == FlightPhase.SECO and (deploy_active or not getattr(rocket, "satellite_mode", False)):
+        return {
+            "badge": "[STAGE 2 SEPARATION]",
+            "subtitle": "Payload deployment",
+            "formulas": [
+                ("Instant mass change:", (160, 170, 180)),
+                ("m_new = m_old - m_stage2", C_GREEN_GO),
+                ("v_new = v_old", C_CYAN),
+                ("position is continuous", C_TEXT),
+                ("payload keeps orbital velocity", C_TEXT),
+            ],
+            "note": "The payload separates without a sudden velocity jump in this simulation.",
+        }
+
+    if phase == FlightPhase.SECO:
+        return {
+            "badge": "[PAYLOAD IN ORBIT]",
+            "subtitle": "Stable orbit check",
+            "formulas": [
+                ("Orbital condition:", (160, 170, 180)),
+                ("v_orb = sqrt(G M_E / r)", C_CYAN),
+                ("epsilon = v^2/2 - mu/r", ACCENT_GOLD),
+                ("a_gravity = -mu r / r^3", C_MAGENTA),
+                ("drag approximately 0 above atmosphere", C_TEXT),
+            ],
+            "note": "Orbit is stable when velocity is mostly sideways and near the circular-orbit speed.",
+        }
+
+    return {
+        "badge": "[ASCENT]",
+        "subtitle": PHASE_NAMES.get(phase, "Flight in progress"),
+        "formulas": [
+            ("Forces:", (160, 170, 180)),
+            ("sum F = T + D + W", C_YELLOW),
+            ("a = sum F / m", C_GREEN_GO),
+        ],
+        "note": "The panel follows the current flight phase automatically.",
+    }
 
 
 # ── Pre-cached Sky ───────────────────────────────────────
@@ -1508,35 +1697,74 @@ def draw_dashboard(surface, font, font_sm, font_tiny, rocket, world,
     surface.blit(font_tiny.render(f"WARP {world.time_warp}x", True, C_TEXT), (sx, sy))
 
     # ── Column 9: Physics Insights ──────────────────────
-    px = sx + 145
-    py = dy + 10
-    
-    surface.blit(font_sm.render("PHYSICS INSIGHTS", True, ACCENT_GOLD), (px, py)); py += 20
-    
-    # 1. Rocket Equation
-    surface.blit(font_tiny.render("Tsiolkovsky Equation:", True, (160, 170, 180)), (px, py)); py += 12
-    surface.blit(font_tiny.render("Δv = Isp · g₀ · ln(m₀/m_f)", True, C_YELLOW), (px, py)); py += 16
-    
-    # 2. Aerodynamic Drag
-    rho = 1.225 * math.exp(-alt / 8500.0) if alt < 100000 else 0
-    cd = rocket.drag_coefficient
-    area = rocket.cross_sectional_area
-    drag = 0.5 * rho * (vel**2) * cd * area
-    surface.blit(font_tiny.render("Aerodynamic Drag:", True, (160, 170, 180)), (px, py)); py += 12
-    surface.blit(font_tiny.render("F_d = ½ ρ v² C_d A", True, C_RED), (px, py)); py += 14
-    surface.blit(font_tiny.render(f"F_d ≈ {drag/1000:.2f} kN", True, C_TEXT), (px, py)); py += 18
-    
-    # 3. Dynamic Pressure (Q)
-    q = 0.5 * rho * (vel**2) / 1000.0 # kPa
-    surface.blit(font_tiny.render("Dynamic Pressure (Q):", True, (160, 170, 180)), (px, py)); py += 12
-    surface.blit(font_tiny.render("q = ½ ρ v²", True, (255, 140, 0)), (px, py)); py += 14
-    surface.blit(font_tiny.render(f"q ≈ {q:.2f} kPa", True, C_TEXT), (px, py)); py += 18
-    
-    # 4. Newton's Second Law
-    surface.blit(font_tiny.render("Newton's Second Law:", True, (160, 170, 180)), (px, py)); py += 12
-    surface.blit(font_tiny.render("a = ΣF / m", True, C_GREEN_GO), (px, py)); py += 14
-    accel = (world.last_thrust_n - drag) / rocket.get_total_mass() if rocket.get_total_mass() > 0 else 0
-    surface.blit(font_tiny.render(f"a_net ≈ {accel:.2f} m/s²", True, C_TEXT), (px, py))
+    phys = compute_ascent_physics(rocket, world)
+    vehicle_is_custom = getattr(world.mission, "vehicle_id", "") == "CUSTOM"
+    panel_x = sx + 135
+    panel_y = dy + 10
+    panel_w = max(330, WIDTH - panel_x - 14)
+    panel_h = DASH_H - 20
+    panel_border = ACCENT_GOLD if phys["twr"] >= 1.0 or world.phase == FlightPhase.PRELAUNCH else C_RED
+
+    pygame.draw.rect(surface, (8, 12, 20), (panel_x, panel_y, panel_w, panel_h), border_radius=6)
+    pygame.draw.rect(surface, panel_border, (panel_x, panel_y, panel_w, panel_h), 2, border_radius=6)
+    pygame.draw.line(surface, C_DASH_LINE, (panel_x + 10, panel_y + 31), (panel_x + panel_w - 10, panel_y + 31), 1)
+
+    px = panel_x + 12
+    py = panel_y + 9
+    title = "CUSTOM ASCENT PHYSICS" if vehicle_is_custom else "ASCENT PHYSICS"
+    surface.blit(font_sm.render(title, True, ACCENT_GOLD), (px, py)); py += 18
+
+    mid_x = panel_x + panel_w // 2
+    pygame.draw.line(surface, C_DASH_LINE, (mid_x, panel_y + 38), (mid_x, panel_y + panel_h - 10), 1)
+
+    def line_at(x, y, text, color=C_TEXT, step=12):
+        if y <= panel_y + panel_h - 14:
+            surface.blit(font_tiny.render(text, True, color), (x, y))
+        return y + step
+
+    left_x = panel_x + 12
+    right_x = mid_x + 12
+    left_y = panel_y + 42
+    right_y = panel_y + 42
+
+    left_y = line_at(left_x, left_y, "FORMULAS USED", (160, 170, 180), 14)
+    left_y = line_at(left_x, left_y, "F = G m1 m2 / d^2", ACCENT_GOLD)
+    left_y = line_at(left_x, left_y, "Fg = G M m / r^2", ACCENT_GOLD)
+    left_y = line_at(left_x, left_y, "g = GM / r^2", ACCENT_GOLD)
+    left_y += 4
+    left_y = line_at(left_x, left_y, "ΣF = T + D + W", C_YELLOW)
+    left_y = line_at(left_x, left_y, "a = ΣF / m", C_GREEN_GO)
+    left_y = line_at(left_x, left_y, "v_new = v_old + a Δt", C_CYAN)
+    left_y = line_at(left_x, left_y, "x_new = x_old + v_new Δt", C_CYAN)
+    left_y += 4
+    left_y = line_at(left_x, left_y, "Vx = V cos(θ)", C_MAGENTA)
+    left_y = line_at(left_x, left_y, "Vy = V sin(θ)", C_MAGENTA)
+    left_y = line_at(left_x, left_y, "Δv = Isp g₀ ln(m₀/mf)", C_YELLOW)
+
+    right_y = line_at(right_x, right_y, "LIVE VALUES", (160, 170, 180), 14)
+    right_y = line_at(right_x, right_y, f"T={phys['thrust']/1000:,.1f} kN  W={phys['weight']/1000:,.1f} kN", C_YELLOW)
+    right_y = line_at(right_x, right_y, f"D={phys['drag']/1000:,.2f} kN  T/W={phys['twr']:.2f}", C_RED)
+    right_y = line_at(right_x, right_y, f"T↑={phys['thrust_radial']/1000:+.1f}  T→={phys['thrust_tangent']/1000:+.1f} kN")
+    right_y = line_at(right_x, right_y, f"D↑={phys['drag_radial']/1000:+.2f}  D→={phys['drag_tangent']/1000:+.2f} kN")
+    right_y += 4
+    right_y = line_at(right_x, right_y, f"ρ={phys['rho']:.4f} kg/m³  q={phys['q']/1000:.2f} kPa", (255, 140, 0))
+    right_y = line_at(right_x, right_y, f"Cd={rocket.drag_coefficient:.2f}  A={rocket.cross_sectional_area:.2f} m²")
+    right_y += 4
+    right_y = line_at(right_x, right_y, f"a↑={phys['a_radial']:+.2f} m/s²  a→={phys['a_tangent']:+.2f}", C_GREEN_GO)
+    right_y = line_at(right_x, right_y, f"|a|={phys['a_net']:.2f} m/s²  m={phys['mass']/1000:.2f} t")
+    right_y = line_at(right_x, right_y, f"v↑={phys['v_radial']:.1f} m/s  v→={phys['v_tangent']:.1f}", C_CYAN)
+    right_y = line_at(right_x, right_y, f"γ flight path={phys['gamma']:.1f}°")
+    right_y = line_at(right_x, right_y, f"ṁ={phys['mdot']:.1f} kg/s  Isp≈{phys['isp']:.0f} s")
+    right_y += 4
+
+    if phys["q"] / 1000.0 > 25.0:
+        line_at(right_x, right_y, "Max-Q: throttle/pitch loads critical", C_RED)
+    elif phys["twr"] < 1.0 and world.phase != FlightPhase.PRELAUNCH:
+        line_at(right_x, right_y, "Lift issue: T/W below 1", C_RED)
+    elif alt < 100000:
+        line_at(right_x, right_y, "Ascent: vertical speed -> orbital speed", C_TEXT)
+    else:
+        line_at(right_x, right_y, "Vacuum: drag ~0, gravity turn dominates", C_TEXT)
 
 
 def draw_hud(surface, font, font_lg, world, phase, vehicle_name, orbit_id):
