@@ -271,10 +271,10 @@ VEHICLES = {
         "payload_geo_kg": 0,
         "orbit_types": ["LEO", "SSO", "MEO", "GTO"],
         "icon_char": "??",
-        "s1_fuel_load": 100.0,
-        "s1_hp_tune": 100.0,
-        "s2_fuel_load": 100.0,
-        "s2_hp_tune": 100.0,
+        "s1_fuel_load": 150.0,
+        "s1_hp_tune": 300.0,
+        "s2_fuel_load": 150.0,
+        "s2_hp_tune": 300.0,
         "stages": [
             {
                 "name": "Custom Stage 1",
@@ -299,7 +299,7 @@ VEHICLES = {
             "mass": 1500,
             "jettison_altitude": 110000.0
         },
-        "cross_sectional_area": 10.0,
-        "drag_coefficient": 0.4
+        "cross_sectional_area": 8.0,
+        "drag_coefficient": 0.35
     }
 }

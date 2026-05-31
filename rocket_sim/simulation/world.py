@@ -140,13 +140,17 @@ class World:
                     "age": 0.0,
                 })
             
-        if vel >= self.mission.orbit_data["target_velocity_m_s"] and self.phase != FlightPhase.SECO:
+        target_vel = float(self.mission.orbit_data["target_velocity_m_s"])
+        target_alt = float(self.mission.orbit_data["target_altitude_m"])
+        is_custom_vehicle = getattr(self.mission, "vehicle_id", "") == "CUSTOM"
+        high_enough_for_orbit = (not is_custom_vehicle) or alt >= target_alt * 0.85
+
+        if vel >= target_vel and high_enough_for_orbit and self.phase != FlightPhase.SECO:
             self.phase = FlightPhase.SECO
             if self.rocket.current_stage_index < len(self.rocket.stages):
                 self.rocket.stages[self.rocket.current_stage_index].active = False
             self._entered_seco = True
-            if getattr(self.mission, "vehicle_id", "") != "CUSTOM":
-                self._inject_to_target_orbit()
+            self._inject_to_target_orbit()
                 
         # 2. Physics integration
         rocket_mass = self.rocket.get_total_mass()

@@ -101,28 +101,28 @@ class CustomRocketBuilder:
 
         # Current selections
         self.sel_parts = {
-            "s1_tank": 2, # LARGE
-            "s1_engine": 1, # RD-180
-            "s1_engine_count": 1,
+            "s1_tank": 3, # HEAVY
+            "s1_engine": 2, # VULCAIN 2
+            "s1_engine_count": 8,
             "s2_tank": 1, # MEDIUM
             "s2_engine": 5, # MERLIN_VAC
-            "fairing": 1, # STANDARD
+            "fairing": 0, # SMALL
         }
 
         self.fields = [
             {"label": "Rocket Name", "key": "name", "type": "text", "val": str(self.custom_data["name"])},
             {"label": "S1 Fuel Tank", "key": "s1_tank", "type": "part", "options": self.tank_ids, "db": FUEL_TANKS},
-            {"label": "S1 Fuel Load (%)", "key": "s1_fuel_load", "type": "num", "val": str(self.custom_data.get("s1_fuel_load", 100))},
+            {"label": "S1 Fuel Load (%)", "key": "s1_fuel_load", "type": "num", "val": str(self.custom_data.get("s1_fuel_load", 150))},
             {"label": "S1 Engine", "key": "s1_engine", "type": "part", "options": self.engine_ids, "db": ENGINES},
-            {"label": "S1 Engine HP (%)", "key": "s1_hp_tune", "type": "num", "val": str(self.custom_data.get("s1_hp_tune", 100))},
-            {"label": "S1 Engine Count", "key": "s1_engine_count", "type": "num", "val": "1"},
+            {"label": "S1 Engine HP (%)", "key": "s1_hp_tune", "type": "num", "val": str(self.custom_data.get("s1_hp_tune", 300))},
+            {"label": "S1 Engine Count", "key": "s1_engine_count", "type": "num", "val": "8"},
             {"label": "S2 Fuel Tank", "key": "s2_tank", "type": "part", "options": self.tank_ids, "db": FUEL_TANKS},
-            {"label": "S2 Fuel Load (%)", "key": "s2_fuel_load", "type": "num", "val": str(self.custom_data.get("s2_fuel_load", 100))},
+            {"label": "S2 Fuel Load (%)", "key": "s2_fuel_load", "type": "num", "val": str(self.custom_data.get("s2_fuel_load", 150))},
             {"label": "S2 Engine", "key": "s2_engine", "type": "part", "options": self.engine_ids, "db": ENGINES},
-            {"label": "S2 Engine HP (%)", "key": "s2_hp_tune", "type": "num", "val": str(self.custom_data.get("s2_hp_tune", 100))},
+            {"label": "S2 Engine HP (%)", "key": "s2_hp_tune", "type": "num", "val": str(self.custom_data.get("s2_hp_tune", 300))},
             {"label": "Fairing Type", "key": "fairing", "type": "part", "options": self.fairing_ids, "db": FAIRINGS},
-            {"label": "Drag Coeff (Cd)", "key": "drag_coefficient", "type": "num", "val": str(self.custom_data["drag_coefficient"])},
-            {"label": "Rocket Area (m2)", "key": "cross_sectional_area", "type": "num", "val": str(self.custom_data["cross_sectional_area"])},
+            {"label": "Drag Coeff (Cd)", "key": "drag_coefficient", "type": "num", "val": str(self.custom_data.get("drag_coefficient", 0.35))},
+            {"label": "Rocket Area (m2)", "key": "cross_sectional_area", "type": "num", "val": str(self.custom_data.get("cross_sectional_area", 8.0))},
         ]
         
         self.active_field = 0
@@ -144,6 +144,45 @@ class CustomRocketBuilder:
 
     def _mark_issue(self, issues, idx, reason):
         issues.setdefault(idx, reason)
+
+    def _payload_capacity(self, target_dv, s1_dry, s1_fuel, s1_isp,
+                          s2_dry, s2_fuel, s2_isp, fairing_mass,
+                          s1_thrust_sl, g0):
+        def performance(payload):
+            payload = max(0.0, payload)
+            m0_2 = s2_dry + s2_fuel + payload
+            m1_2 = s2_dry + payload
+            dv2 = s2_isp * g0 * math.log(m0_2 / m1_2) if m1_2 > 0 and s2_isp > 0 else 0.0
+
+            m_s2_total = s2_dry + s2_fuel + payload + fairing_mass
+            m0_1 = s1_dry + s1_fuel + m_s2_total
+            m1_1 = s1_dry + m_s2_total
+            dv1 = s1_isp * g0 * math.log(m0_1 / m1_1) if m1_1 > 0 and s1_isp > 0 else 0.0
+            twr = s1_thrust_sl / (m0_1 * g0) if m0_1 > 0 else 0.0
+            return dv1 + dv2, twr
+
+        dv_empty, twr_empty = performance(0.0)
+        if dv_empty < target_dv or twr_empty < 1.0:
+            return 0.0
+
+        lo, hi = 0.0, 1000.0
+        for _ in range(24):
+            dv_hi, twr_hi = performance(hi)
+            if dv_hi < target_dv or twr_hi < 1.0:
+                break
+            hi *= 2.0
+            if hi >= 200000.0:
+                hi = 200000.0
+                break
+
+        for _ in range(48):
+            mid = (lo + hi) * 0.5
+            dv_mid, twr_mid = performance(mid)
+            if dv_mid >= target_dv and twr_mid >= 1.0:
+                lo = mid
+            else:
+                hi = mid
+        return lo
 
     def _build_compatibility_issues(self):
         """Return field-index issues that can stop the custom rocket from climbing."""
@@ -215,6 +254,11 @@ class CustomRocketBuilder:
             self._mark_issue(issues, 7, "Low total delta-v.")
             self._mark_issue(issues, 8, "Upper stage may lack orbital energy.")
 
+        if getattr(self, "payload_margin_kg", 0.0) < 0.0:
+            self._mark_issue(issues, 6, "Payload capacity is below 1,000 kg.")
+            self._mark_issue(issues, 7, "Reduce upper-stage mass to carry payload.")
+            self._mark_issue(issues, 8, "Upper stage needs more payload performance.")
+
         return issues
 
     def _update_stats(self):
@@ -274,6 +318,14 @@ class CustomRocketBuilder:
         self.total_dv = dv1 + dv2
         self.total_mass = m0_1
         self.s1_twr = s1_t_sl / (self.total_mass * g0) if self.total_mass > 0 else 0
+        self.payload_reference_kg = m_payload
+        self.payload_capacity_leo_kg = self._payload_capacity(
+            7600.0, s1_dry, s1_fuel, s1_isp, s2_dry, s2_fuel, s2_isp, m_f, s1_t_sl, g0
+        )
+        self.payload_capacity_gto_kg = self._payload_capacity(
+            10200.0, s1_dry, s1_fuel, s1_isp, s2_dry, s2_fuel, s2_isp, m_f, s1_t_sl, g0
+        )
+        self.payload_margin_kg = self.payload_capacity_leo_kg - self.payload_reference_kg
         
         # Power / Electricity
         self.total_power_draw = s1_power + s2_power
@@ -311,7 +363,13 @@ class CustomRocketBuilder:
             "twr": float(self.s1_twr),
             "delta_v_m_s": float(self.total_dv),
             "total_mass_kg": float(self.total_mass),
+            "assumed_payload_kg": float(self.payload_reference_kg),
+            "payload_capacity_leo_kg": float(self.payload_capacity_leo_kg),
+            "payload_capacity_gto_kg": float(self.payload_capacity_gto_kg),
+            "payload_margin_kg": float(self.payload_margin_kg),
         }
+        self.custom_data["payload_leo_kg"] = max(0, int(self.payload_capacity_leo_kg))
+        self.custom_data["payload_geo_kg"] = max(0, int(self.payload_capacity_gto_kg))
         self.compat_issues = self._build_compatibility_issues()
 
     def _draw_rocket_preview(self, rect):
@@ -447,10 +505,21 @@ class CustomRocketBuilder:
             ("T/W = Thrust / Weight", f"{self.s1_twr:.2f}"),
             ("Mass", f"{self.total_mass:,.0f} kg"),
             ("Delta-v", f"{self.total_dv:,.0f} m/s"),
+            ("Assumed Payload", f"{self.payload_reference_kg:,.0f} kg"),
+            ("Max Payload LEO", f"{self.payload_capacity_leo_kg:,.0f} kg"),
+            ("Payload Margin", f"{self.payload_margin_kg:+,.0f} kg"),
         ]
         for label, value in stats:
             self.screen.blit(self.f_tiny.render(label, True, TEXT_DIM), (x, y))
-            self.screen.blit(self.f_small.render(value, True, twr_col if label.startswith("T/W") else TEXT_HI), (x + 150, y - 1))
+            if label.startswith("T/W"):
+                val_col = twr_col
+            elif label == "Payload Margin":
+                val_col = ACCENT_GRN if self.payload_margin_kg >= 0 else ACCENT_RED
+            elif label == "Max Payload LEO":
+                val_col = ACCENT_GRN if self.payload_capacity_leo_kg >= self.payload_reference_kg else ACCENT_RED
+            else:
+                val_col = TEXT_HI
+            self.screen.blit(self.f_small.render(value, True, val_col), (x + 150, y - 1))
             y += 18
 
         y += 8
@@ -522,6 +591,9 @@ class CustomRocketBuilder:
             ("Total Mass", f"{self.total_mass:,.0f} kg", TEXT_HI),
             ("Liftoff TWR", f"{self.s1_twr:.2f}", ACCENT_GRN if self.s1_twr > 1.2 else ACCENT_RED),
             ("Total Delta-V", f"{self.total_dv:,.0f} m/s", ACCENT_CYAN),
+            ("Payload Used", f"{self.payload_reference_kg:,.0f} kg", TEXT_HI),
+            ("Max Payload LEO", f"{self.payload_capacity_leo_kg:,.0f} kg", ACCENT_GRN if self.payload_margin_kg >= 0 else ACCENT_RED),
+            ("Max Payload GTO", f"{self.payload_capacity_gto_kg:,.0f} kg", ACCENT_CYAN if self.payload_capacity_gto_kg > 0 else TEXT_DIM),
             ("", "", TEXT_DIM),
             ("S1 Base HP", f"{s1_base_hp:,.0f} hp", ACCENT_CYAN),
             ("S1 Propellant", f"{s1['propellant_mass']:,.0f} kg", TEXT_HI),
