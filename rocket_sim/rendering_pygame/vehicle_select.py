@@ -61,6 +61,16 @@ def draw_glow_text(surf, text, font, color, pos, glow_color=None, glow_passes=2)
     surf.blit(font.render(text, True, color), pos)
 
 
+def display_shortcut(event):
+    return (
+        event.type == pygame.KEYDOWN
+        and (
+            event.key == pygame.K_F11
+            or (event.key == pygame.K_RETURN and (event.mod & pygame.KMOD_ALT))
+        )
+    )
+
+
 # ASCII rocket art per vehicle code
 ROCKET_ART = {
     "F9":  ["  /\\  ", " /  \\ ", " |  | ", " |  | ", " \\__/ "],
@@ -700,6 +710,7 @@ class CustomRocketBuilder:
         by = self.H - 60
         self.screen.blit(self.f_head.render("[ ENTER ] FINALIZE ASSEMBLY", True, ACCENT_GRN), (bx - 260, by))
         self.screen.blit(self.f_head.render("[ ESC ] DISCARD CHANGES", True, ACCENT_RED), (bx + 60, by))
+        self.screen.blit(self.f_small.render("[ F11 ] FULLSCREEN", True, ACCENT_CYAN), (bx + 390, by + 4))
 
         pygame.display.flip()
 
@@ -966,7 +977,7 @@ class VehicleSelectScreen:
         t = self.f_title.render(title, True, ACCENT_CYAN)
         self.screen.blit(t, (self.W // 2 - t.get_width() // 2, 18))
 
-        sub = "Select launch vehicle and target orbit  ·  SPACE / ENTER to launch  ·  ESC to quit"
+        sub = "Select launch vehicle and target orbit  ·  SPACE / ENTER launch  ·  F11 fullscreen"
         s = self.f_small.render(sub, True, TEXT_TINY)
         self.screen.blit(s, (self.W // 2 - s.get_width() // 2, 54))
 
@@ -1216,12 +1227,18 @@ def run_selection(screen, clock, fps=60) -> tuple:
         if builder:
             builder.draw()
             for event in pygame.event.get():
+                if display_shortcut(event):
+                    pygame.display.toggle_fullscreen()
+                    continue
                 res = builder.handle_event(event)
                 if res == "SAVE" or res == "CANCEL":
                     builder = None
         else:
             sel.tick(dt)
             for event in pygame.event.get():
+                if display_shortcut(event):
+                    pygame.display.toggle_fullscreen()
+                    continue
                 result = sel.handle_event(event)
                 if result == "BUILD":
                     builder = CustomRocketBuilder(screen, sel.f_body, sel.f_head, sel.f_small, sel.f_tiny)

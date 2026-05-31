@@ -25,6 +25,7 @@ from rendering_pygame.vehicle_select import run_selection
 
 # ── Layout ───────────────────────────────────────────────
 WIDTH, HEIGHT = 1720, 900
+WINDOW_FLAGS = pygame.SCALED | pygame.RESIZABLE
 SIDE_W  = 185
 RIGHT_W = 360
 DASH_H  = 295          # taller dashboard for proper graphs
@@ -80,6 +81,16 @@ def lerp_color(c1, c2, t):
 
 def clamp(v, lo, hi):
     return lo if v < lo else hi if v > hi else v
+
+
+def display_shortcut(event):
+    return (
+        event.type == pygame.KEYDOWN
+        and (
+            event.key == pygame.K_F11
+            or (event.key == pygame.K_RETURN and (event.mod & pygame.KMOD_ALT))
+        )
+    )
 
 
 def scale_color(c, f):
@@ -1903,8 +1914,8 @@ def draw_failure_screen(surface, font_lg, font_sm, title, details):
 # ── Main ─────────────────────────────────────────────────
 def run_app():
     pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Satellite Mission Simulator")
+    screen = pygame.display.set_mode((WIDTH, HEIGHT), WINDOW_FLAGS)
+    pygame.display.set_caption("Satellite Mission Simulator - resize window / F11 fullscreen")
     clock  = pygame.time.Clock()
 
     font      = pygame.font.SysFont("Menlo", 14)
@@ -1982,7 +1993,9 @@ def run_app():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+                if display_shortcut(event):
+                    pygame.display.toggle_fullscreen()
+                elif event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_r and (fail_state["active"] or explosion_state["active"]):
                     vid, oid = do_selection()
